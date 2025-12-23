@@ -8,6 +8,7 @@ AppCore::AppCore() : eventManager() {
     eventManager.subscribe("cache_ok", AppCore::startInitialization, this);
     eventManager.subscribe("askToReady", AppCore::askToReady, this);
     eventManager.subscribe("cache_err", AppCore::discardStartUp, this);
+
 }
 
 void AppCore::startInitialization() {

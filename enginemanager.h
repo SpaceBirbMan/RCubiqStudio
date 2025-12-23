@@ -34,7 +34,12 @@ private:
 
     nlohmann::json serializeCache() const override {
         nlohmann::json j = {
-            {"enginesRegistry", enginesRegistry}
+            // {"enginesRegistry", enginesRegistry}
+            {"enginesRegistry", "test"},
+            {"renderSettings", "CPU"},
+            {"mode", "flat"},
+            {"isCorrupted", "no"},
+            {"hadCrash", "no"}
         };
         return j;
     }
@@ -51,6 +56,8 @@ private:
     void setActiveEngine(std::string ename);
 
     void setFuncs(funcMap map);
+
+    void getActiveFrames();
 
 };
 

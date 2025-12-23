@@ -5,6 +5,7 @@
 #include "appcore.h"
 #include <QTableWidget>
 #include "uirenderer.h"
+#include <QTimer>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -28,6 +29,14 @@ private:
     void showCacheErrorMessage();
     void setControlsTable(std::unordered_map<std::string, std::string> table);
     void initDynamicUi(std::shared_ptr<UiPage> root);
+    void connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr);
+
+    std::shared_ptr<renderQueue> frameQueue = nullptr;
+    QTimer* renderTimer = nullptr;
+
+    QImage currentImage;
+
+    void renderNextFrame();
 
 private slots:
     void onNewFileClicked();

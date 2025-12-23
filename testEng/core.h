@@ -5,8 +5,11 @@
 #include <string>
 #include "puppetmodel.h"
 #include "../abstractuinodes.h"
+#include "../icacheable.h"
+#include <nlohmann/json.hpp>
+#include "../misc.h"
 
-class Core
+class Core : public ICacheable
 {
 public:
     Core(AppCore* appcptr);
@@ -24,10 +27,33 @@ private:
 
     void modelDataRequest();
 
+    void startRendering();
+
     void buildGui();
+
+    void sendQueueToUi();
+
+    std::shared_ptr<renderQueue> rQueue = std::make_shared<renderQueue>();
+
+        std::string cacheKey() const override { return name; }
 
     std::shared_ptr<UiPage> rootPage;
 
+    nlohmann::json serializeCache() const override {
+        nlohmann::json j = {
+
+        };
+        return j;
+    }
+
+    void deserializeCache(const std::any& data) override {
+    }
+
+    std::thread renderThread;
+    std::atomic<bool> renderingActive;
+    std::mutex queueMutex;
+
+    void renderLoop();
 };
 
 #endif // CORE_H

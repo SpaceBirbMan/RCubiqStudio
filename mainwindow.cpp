@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include <QQuickView>
+#include "ViewportWidget.h"
 
 //QQuickView* view = new QQuickView(); // через эту тему лучше пойдёт рендер
 // надо размещать отдельно, должно пойти с любым rend-back
@@ -12,9 +13,15 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
     this->core = core;
     ui->setupUi(this);
 
+    auto* customViewport = new ViewportWidget(ui->viewport->parentWidget());
+    ui->gridLayout_2->replaceWidget(ui->viewport, customViewport);
+    delete ui->viewport;
+    ui->viewport = customViewport;
+
     core->getEventManager().subscribe("cache_err", &MainWindow::showCacheErrorMessage, this);
     core->getEventManager().subscribe("send_control_table", &MainWindow::setControlsTable, this);
     core->getEventManager().subscribe("init_ui_eng", &MainWindow::initDynamicUi, this);
+    core->getEventManager().subscribe("send_frame_queue", &MainWindow::connectFramesToViewport, this);
 
     connect(ui->newFileMenuButton, &QAction::triggered, this, MainWindow::onNewFileClicked);
     connect(ui->saveFileMenuButton, &QAction::triggered, this, MainWindow::onSaveFileClicked);
@@ -59,4 +66,33 @@ void MainWindow::initDynamicUi(std::shared_ptr<UiPage> root) {
     QMetaObject::invokeMethod(this, [this, root]() { // это нужно из-за того, что рендер может вызываться не из ui-потока qt
         UiRenderer::renderToTabWidget(root, ui->leftPanel);
     }, Qt::QueuedConnection);
+}
+
+void MainWindow::connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr) {
+    QMetaObject::invokeMethod(this, [this, queuePtr]() {
+        frameQueue = queuePtr;
+        if (!renderTimer) {
+            renderTimer = new QTimer(this);
+            connect(renderTimer, &QTimer::timeout, this, &MainWindow::renderNextFrame);
+            renderTimer->start(16); // ~60 FPS
+        }
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::renderNextFrame() {
+    if (!frameQueue || frameQueue->empty()) return;
+
+    Frame frame = std::move(frameQueue->front());
+    frameQueue->pop_front();
+
+    QImage img(frame.pixels.data(), frame.width, frame.height,
+               frame.stride, QImage::Format_RGBA8888);
+
+    QImage imgCopy = img.copy();
+
+    QWidget* viewport = ui->viewport;
+    static_cast<ViewportWidget*>(ui->viewport)->setImage(imgCopy);
+    viewport->update();
+
+    currentImage = imgCopy;
 }

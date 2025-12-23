@@ -43,7 +43,7 @@ public:
     } // достать сообщение из очереди
 
     void clearQueue() {
-        eventQueue.empty();
+        eventQueue.clear();
     }
 
     void setProcessor(MessageProcessor* mpPtr) {

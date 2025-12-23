@@ -9,8 +9,12 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools)
+set(QT_VERSION_MAJOR 6)
+
+# Qt6 является основным, но если найти ему замену, можно будет выбрать и Qt5 + будет проще заменить графический фреймворк
+
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2)
 
 set(TS_FILES M3_ru_RU.ts)
 
@@ -58,10 +62,28 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         testEng/modelfactory.h testEng/modelfactory.cpp
         misc.h
         icacheable.h
+        resources.qrc
         consts.h
 
         abstractuinodes.h
         uirenderer.h uirenderer.cpp
+
+        outputdevice.cpp
+        outputdevice.h
+
+
+        renderbridgeqt.h renderbridgeqt.cpp
+        qrenderitem.h qrenderitem.cpp
+        framequeue.h framequeue.cpp
+        frameview.h frameview.cpp
+
+        qttextureimpl.h qttextureimpl.cpp
+        commandlistimpl.h commandlistimpl.cpp
+        qtcontextimpl.h qtcontextimpl.cpp
+        mainwindow2.ui
+        main.qml
+        ViewportWidget.h
+
 
 
     )
@@ -87,7 +109,15 @@ else()
     qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 endif()
 
-target_link_libraries(M3 PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::QuickWidgets)
+target_link_libraries(
+    M3 PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Quick
+    Qt${QT_VERSION_MAJOR}::QuickWidgets
+    # Qt 6 из-за зависимости от RHI модуля
+    Qt6::Gui
+    Qt6::QuickControls2
+    Qt6::GuiPrivate
+)
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an

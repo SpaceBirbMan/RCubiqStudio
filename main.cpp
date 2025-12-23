@@ -9,6 +9,12 @@
 #include <QSplashScreen>
 #include <QThread>
 
+#include <QApplication>
+#include <QQuickView>
+#include <QQmlEngine>
+
+
+
 // Вспомогательная функция для отправки сообщения о сохранении кэша
 void sendSaveCacheMessage(AppCore* core) {
     if (core) {
@@ -43,8 +49,14 @@ int main(int argc, char *argv[])
     Core *engCore = new Core(core); // движок
 
     core->getEventManager().sendMessage(AppMessage("main", "askToReady", 0)); // вместо нуля можно аргументы
-
+#ifndef QML
     mainWindow.show();
+#endif
+#ifdef QML
+    // QQuickView view; view.setSource(QUrl("qrc:/main.qml"));
+    // view.setResizeMode(QQuickView::SizeRootObjectToView);
+    // view.show();
+#endif
 /////////////////////////////////////////////////
     splash.finish(&mainWindow); // закрыть сплеш после показа окна
     QTranslator translator;

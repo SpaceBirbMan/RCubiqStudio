@@ -4,7 +4,7 @@ EngineManager::EngineManager(AppCore* acptr) {
     this->acptr = acptr;
 
     /*
-     * Первый запрос на инициализацию требует ответ о готвонсти, затем
+     * Первый запрос на инициализацию требует ответ о готовности, затем
      * публикуется таблица данных из кеша, которую нужно "распарсить"
      * в конце инициализации таблица удаляется из оперативной памяти
      */
@@ -18,6 +18,8 @@ EngineManager::EngineManager(AppCore* acptr) {
     acptr->getEventManager().subscribe("general_init_ok", &EngineManager::setActiveEngine, this);
 
     acptr->getEventManager().subscribe("set_data", &EngineManager::deserializeCache, this);
+
+    acptr->getEventManager().subscribe("start_drawing_frames", &EngineManager::getActiveFrames, this);
 }
 
 void EngineManager::setFuncs(funcMap map) {
@@ -61,4 +63,8 @@ void EngineManager::setActiveEngine(std::string ename) {
         acptr->getEventManager().sendMessage(AppMessage(name, "error", "Данные об ошибке"));
     }
 
+}
+
+void EngineManager::getActiveFrames() {
+    this->acptr->getEventManager().sendMessage(AppMessage(name, "extract_render_queue", 0));
 }
