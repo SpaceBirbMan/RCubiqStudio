@@ -20,6 +20,7 @@ EngineManager::EngineManager(AppCore* acptr) {
     acptr->getEventManager().subscribe("set_data", &EngineManager::deserializeCache, this);
 
     acptr->getEventManager().subscribe("start_drawing_frames", &EngineManager::getActiveFrames, this);
+    acptr->getEventManager().subscribe("add_engines_names", &EngineManager::addNames, this);
 }
 
 void EngineManager::setFuncs(funcMap map) {
@@ -52,7 +53,7 @@ void EngineManager::setActiveEngine(std::string ename) {
         if (ename == "") {
             // резолв первой строки словаря
                 auto pair = enginesRegistry.begin();
-                acptr->getEventManager().sendMessage(AppMessage(name, "engine_resolving_request", pair->second));
+                //acptr->getEventManager().sendMessage(AppMessage(name, "engine_resolving_request", pair->second));
 
         } else {
             // резолв по имени
@@ -67,4 +68,13 @@ void EngineManager::setActiveEngine(std::string ename) {
 
 void EngineManager::getActiveFrames() {
     this->acptr->getEventManager().sendMessage(AppMessage(name, "extract_render_queue", 0));
+}
+
+void EngineManager::addNames(std::vector<std::string> names) {
+    for (std::string name : names) {
+        this->enginesRegistry.insert(name);
+        std::cout << name << std::endl;
+    }
+
+    acptr->getEventManager().sendMessage(AppMessage(name, "added_names", names.size()));
 }

@@ -4,6 +4,7 @@
 #include <vector>
 #include "appcore.h"
 #include "unordered_map"
+#include <set>
 #include "shorts.h"
 #include "icacheable.h"
 #include <nlohmann/json.hpp>
@@ -28,7 +29,7 @@ private:
 
     ////////////////////////////////Сериализуемые поля///////////////////////////////////
 
-    std::unordered_map<std::string, std::string> enginesRegistry {}; // название | путь
+    std::set<std::string> enginesRegistry {};
 
     /////////////////////////////////////////////////////////////////////////////////////
 
@@ -58,6 +59,8 @@ private:
     void setFuncs(funcMap map);
 
     void getActiveFrames();
+
+    void addNames(std::vector<std::string> names);
 
 };
 

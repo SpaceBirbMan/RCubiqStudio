@@ -6,6 +6,7 @@
 #include <QTableWidget>
 #include "uirenderer.h"
 #include <QTimer>
+#include <QFileDialog>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -30,6 +31,7 @@ private:
     void setControlsTable(std::unordered_map<std::string, std::string> table);
     void initDynamicUi(std::shared_ptr<UiPage> root);
     void connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr);
+    void addEngineFile();
 
     std::shared_ptr<renderQueue> frameQueue = nullptr;
     QTimer* renderTimer = nullptr;

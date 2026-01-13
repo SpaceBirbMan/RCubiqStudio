@@ -25,6 +25,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
 
     connect(ui->newFileMenuButton, &QAction::triggered, this, MainWindow::onNewFileClicked);
     connect(ui->saveFileMenuButton, &QAction::triggered, this, MainWindow::onSaveFileClicked);
+    connect(ui->includeEngineMenuButton, &QAction::triggered, this, MainWindow::addEngineFile);
 }
 
 MainWindow::~MainWindow()
@@ -95,4 +96,25 @@ void MainWindow::renderNextFrame() {
     viewport->update();
 
     currentImage = imgCopy;
+}
+
+void MainWindow::addEngineFile() {
+
+    QWidget* parentWidget = ui->centralwidget;
+
+    QStringList fileNames = QFileDialog::getOpenFileNames(
+        parentWidget,
+        "Выберите файл движка",
+        QDir::homePath(),
+        "Файлы движка (*.dll);;Все файлы (*)"
+        );
+
+    std::vector<std::string> names {};
+
+    for (QString qstr : fileNames) {
+        names.emplace_back(qstr.toStdString());
+    }
+
+    core->getEventManager().sendMessage(AppMessage("UI", "add_engines_names", names));
+    // имена движков, по идее, надо кешировать и вписать в дроплист
 }

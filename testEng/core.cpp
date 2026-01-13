@@ -68,7 +68,7 @@ void Core::startRendering() {
 
 void Core::sendQueueToUi() {
 
-
+    if (!renderingActive) {
     this->acptr->getEventManager().sendMessage(AppMessage(name, "send_frame_queue", rQueue));
 
     // todo: Запрет на повторный запуск + отчёт об ошибке
@@ -77,6 +77,9 @@ void Core::sendQueueToUi() {
 
     renderingActive = true;
     renderThread = std::thread(&Core::renderLoop, this);
+    } else {
+        this->acptr->getEventManager().sendMessage(AppMessage(name, "err_render_recall", 0));
+    }
 
 }
 

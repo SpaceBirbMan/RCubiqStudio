@@ -15,6 +15,13 @@ public:
      * @param message сообщение (оно будет сверяться с таблицей зарегистрированных коллбеков)
      * @param data данные для вызываемых методов
      */
+
+    AppMessage() {
+        this->message = "null";
+        this->sender = "null";
+        this->data = nullptr;
+    }
+
     AppMessage(senderType sender, messageType message, std::any data) {
         this->message = message;
         this->sender = sender;

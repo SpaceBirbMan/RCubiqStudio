@@ -14,7 +14,9 @@ payload FileLoader::loadBin(std::string path) {
         payload data(size);
         file.read(reinterpret_cast<char*>(data.data()), size);
         return data;
-    } catch (...) {}
+    } catch (...) {
+        // todo: catch
+    }
 
 }
 
@@ -32,5 +34,7 @@ nlohmann::json FileLoader::loadJson(std::string path) {
         }
 
         return j;
-    } catch (...) {}
+    } catch (...) {
+        return nullptr;
+    }
 }

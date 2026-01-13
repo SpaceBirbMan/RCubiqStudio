@@ -38,7 +38,7 @@ public:
         eventQueue.pop_front();
         return res;
         } else {
-
+            return AppMessage();
         }
     } // достать сообщение из очереди
 

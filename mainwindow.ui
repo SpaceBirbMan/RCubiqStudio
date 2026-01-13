@@ -35,6 +35,69 @@
          <height>507</height>
         </rect>
        </property>
+       <layout class="QVBoxLayout" name="verticalLayout">
+        <item>
+         <widget class="QLabel" name="label">
+          <property name="text">
+           <string>Активный движок</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="enginesComboBox"/>
+        </item>
+        <item>
+         <widget class="Line" name="line">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_2">
+          <property name="text">
+           <string>Таблица биндов</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QScrollArea" name="scrollArea_3">
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
+          <widget class="QWidget" name="scrollAreaWidgetContents_3">
+           <property name="geometry">
+            <rect>
+             <x>0</x>
+             <y>0</y>
+             <width>204</width>
+             <height>384</height>
+            </rect>
+           </property>
+           <layout class="QHBoxLayout" name="horizontalLayout_2">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QTableView" name="tableView"/>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
       </widget>
      </widget>
     </item>
@@ -79,7 +142,7 @@
       </widget>
       <widget class="QWidget" name="inputSettings">
        <attribute name="title">
-        <string>Управление</string>
+        <string>Пусть движок сам добавляет панели</string>
        </attribute>
        <layout class="QGridLayout" name="gridLayout">
         <property name="leftMargin">
@@ -152,6 +215,7 @@
     </property>
     <addaction name="newFileMenuButton"/>
     <addaction name="saveFileMenuButton"/>
+    <addaction name="includeEngineMenuButton"/>
    </widget>
    <widget class="QMenu" name="menu_2">
     <property name="title">
@@ -187,6 +251,11 @@
   <action name="saveFileMenuButton">
    <property name="text">
     <string>Сохранить как...</string>
+   </property>
+  </action>
+  <action name="includeEngineMenuButton">
+   <property name="text">
+    <string>Подключить движок</string>
    </property>
   </action>
  </widget>

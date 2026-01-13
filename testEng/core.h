@@ -50,7 +50,7 @@ private:
     }
 
     std::thread renderThread;
-    std::atomic<bool> renderingActive;
+    std::atomic<bool> renderingActive = false;
     std::mutex queueMutex;
 
     void renderLoop();
