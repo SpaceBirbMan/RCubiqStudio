@@ -22,7 +22,7 @@
    </property>
    <layout class="QGridLayout" name="gridLayout_2" columnstretch="2,5,2">
     <item row="0" column="2">
-     <widget class="QScrollArea" name="scrollArea">
+     <widget class="QScrollArea" name="rightPanel">
       <property name="widgetResizable">
        <bool>true</bool>
       </property>
@@ -107,7 +107,7 @@
        <enum>QTabWidget::TabPosition::West</enum>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>0</number>
       </property>
       <property name="movable">
        <bool>true</bool>

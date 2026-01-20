@@ -25,7 +25,9 @@ private:
 
     AppCore* acptr;
 
-    funcMap currentEngineFunctions; // указывает на функцию входа в код движка (main в движке)
+    EngineFuncs currentEngineFunctions; // указывает на функцию входа в код движка (main в движке)
+
+    IModel* engine;
 
     ////////////////////////////////Сериализуемые поля///////////////////////////////////
 
@@ -54,7 +56,7 @@ private:
 
     void funcsTableResolvingRequest();
 
-    void setActiveEngine(std::string ename);
+    void activateEngine(std::vector<void*> pointers);
 
     void setFuncs(funcMap map);
 

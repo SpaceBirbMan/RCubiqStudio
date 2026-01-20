@@ -11,6 +11,9 @@ public:
     DynamicLibrary(const DynamicLibrary&) = delete;
     DynamicLibrary& operator=(const DynamicLibrary&) = delete;
 
+    DynamicLibrary(DynamicLibrary&&) noexcept = default;
+    DynamicLibrary& operator=(DynamicLibrary&&) noexcept = default;
+
     void* getSymbol(const std::string& name);
 
     bool isOpen() const { return handle_ != nullptr; }

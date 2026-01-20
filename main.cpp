@@ -46,7 +46,7 @@ int main(int argc, char *argv[])
     DataManager *dtm = new DataManager(core);
     EngineManager *egm = new EngineManager(core);
     MainWindow mainWindow(nullptr, core);
-    Core *engCore = new Core(core); // движок
+    //Core *engCore = new Core(core); // движок
 
     core->getEventManager().sendMessage(AppMessage("main", "askToReady", 0)); // вместо нуля можно аргументы
 #ifndef QML

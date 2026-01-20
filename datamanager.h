@@ -9,7 +9,9 @@
 #include "dynamiclibrary.h"
 #include <any>
 #include <vector>
+#include <set>
 #include "misc.h"
+#include <unordered_map>
 
 class DataManager
 {
@@ -32,11 +34,13 @@ private:
     CacheManager cacheManager;
     CrashReportManager crashReportManager;
 
+    std::unordered_map<std::string, std::shared_ptr<DynamicLibrary>> libsPool {};
+
     void tryToLoadCache();
 
     void loadModel(std::vector<std::string> exts);
 
-    void resolveFuncTable(std::string path);
+    void resolveFuncTable(LibMeta meta);
 
     void saveFiles(std::any data);
 

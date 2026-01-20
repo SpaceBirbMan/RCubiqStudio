@@ -29,8 +29,23 @@ void MessageProcessor::process() {
 
             for (const subStruct sstr : subsVector) {
                 if (msg.getMessage() == sstr.name) {
-
-                    sstr.callback(msg.getData());
+                    try {
+                        sstr.callback(msg.getData());
+                    }
+                    catch (const std::bad_any_cast& e) {
+                        std::cerr << "bad_any_cast in callback '"
+                                  << sstr.name << "': "
+                                  << e.what() << std::endl;
+                    }
+                    catch (const std::exception& e) {
+                        std::cerr << "std::exception in callback '"
+                                  << sstr.name << "': "
+                                  << e.what() << std::endl;
+                    }
+                    catch (...) {
+                        std::cerr << "unknown exception in callback '"
+                                  << sstr.name << "'" << std::endl;
+                    }
                 }
             }
 

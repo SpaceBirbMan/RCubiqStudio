@@ -66,11 +66,11 @@ public:
 
 class UiContainer : public UiElement {
 public:
-    std::vector<std::unique_ptr<UiElement>> children;
+    std::vector<std::shared_ptr<UiElement>> children;
 
     template<typename T, typename... Args>
     T* add(Args&&... args) {
-        auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
+        auto ptr = std::make_shared<T>(std::forward<Args>(args)...);
         T* raw = ptr.get();
         children.push_back(std::move(ptr));
         return raw;
@@ -104,6 +104,11 @@ class UiTitle : public UiElement {
 public:
     std::string text;
     TextFormat format = Normal;
+
+    UiTitle(std::string text) {
+        this->text = text;
+    }
+
 };
 
 class UiProgressBar : public UiElement {
@@ -124,6 +129,15 @@ class UiButton : public UiElement {
 public:
     std::string text;
     std::function<void()> onClick;
+
+    UiButton(std::string text) {
+        this->text = text;
+    }
+
+    UiButton(std::string text, std::function<void()> onClick) {
+        this->text = text;
+        this->onClick = onClick;
+    }
 };
 
 class UiToggleableButton : public UiButton {

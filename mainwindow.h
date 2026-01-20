@@ -32,6 +32,8 @@ private:
     void initDynamicUi(std::shared_ptr<UiPage> root);
     void connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr);
     void addEngineFile();
+    void switchActiveEngine(const QString& engine);
+    void updateEnginesCombo(const std::set<std::string> &names);
 
     std::shared_ptr<renderQueue> frameQueue = nullptr;
     QTimer* renderTimer = nullptr;

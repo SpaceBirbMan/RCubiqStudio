@@ -22,10 +22,13 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
     core->getEventManager().subscribe("send_control_table", &MainWindow::setControlsTable, this);
     core->getEventManager().subscribe("init_ui_eng", &MainWindow::initDynamicUi, this);
     core->getEventManager().subscribe("send_frame_queue", &MainWindow::connectFramesToViewport, this);
+    core->getEventManager().subscribe("update_engines_combo", &MainWindow::updateEnginesCombo, this);
 
     connect(ui->newFileMenuButton, &QAction::triggered, this, MainWindow::onNewFileClicked);
     connect(ui->saveFileMenuButton, &QAction::triggered, this, MainWindow::onSaveFileClicked);
     connect(ui->includeEngineMenuButton, &QAction::triggered, this, MainWindow::addEngineFile);
+    connect(ui->enginesComboBox, &QComboBox::currentTextChanged,
+            this, &MainWindow::switchActiveEngine);
 }
 
 MainWindow::~MainWindow()
@@ -117,4 +120,21 @@ void MainWindow::addEngineFile() {
 
     core->getEventManager().sendMessage(AppMessage("UI", "add_engines_names", names));
     // имена движков, по идее, надо кешировать и вписать в дроплист
+}
+
+void MainWindow::switchActiveEngine(const QString& engine) {
+
+    LibMeta meta;
+    meta.path = engine.toStdString();
+    meta.func_names.emplace_back("create_engine");
+    //meta.func_names.emplace_back("destroy");
+    core->getEventManager().sendMessage(AppMessage("UI", "engine_resolving_request", meta));
+
+}
+
+void MainWindow::updateEnginesCombo(const std::set<std::string> &names) {
+    for (std::string name : names) {
+        ui->enginesComboBox->addItem(QString::fromStdString(name));
+    }
+
 }

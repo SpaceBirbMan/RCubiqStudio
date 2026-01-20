@@ -14,8 +14,8 @@ EngineManager::EngineManager(AppCore* acptr) {
     // ответ на инициализацию
     acptr->getEventManager().subscribe("initialize", &EngineManager::initialize, this);
     // ответ на возврат ссылок плагина
-    acptr->getEventManager().subscribe("engine_resolving_respond", &EngineManager::setActiveEngine, this);
-    acptr->getEventManager().subscribe("general_init_ok", &EngineManager::setActiveEngine, this);
+    acptr->getEventManager().subscribe("engine_resolving_respond", &EngineManager::activateEngine, this);
+    // acptr->getEventManager().subscribe("general_init_ok", &EngineManager::activateEngine, this);
 
     acptr->getEventManager().subscribe("set_data", &EngineManager::deserializeCache, this);
 
@@ -25,7 +25,7 @@ EngineManager::EngineManager(AppCore* acptr) {
 
 void EngineManager::setFuncs(funcMap map) {
     // todd: верефикация таблицы (maybe)
-    this->currentEngineFunctions = map;
+    // this->currentEngineFunctions = map;
 }
 
 void EngineManager::initialize() {
@@ -48,20 +48,55 @@ void EngineManager::initialize() {
     acptr->getEventManager().sendMessage(AppMessage(name, "build_gui", 0));
 }
 
-void EngineManager::setActiveEngine(std::string ename) {
-    if (!enginesRegistry.empty()) {
-        if (ename == "") {
-            // резолв первой строки словаря
-                auto pair = enginesRegistry.begin();
-                //acptr->getEventManager().sendMessage(AppMessage(name, "engine_resolving_request", pair->second));
 
-        } else {
-            // резолв по имени
-            acptr->getEventManager().sendMessage(AppMessage(name, "engine_resolving_request", enginesRegistry.find(ename))); // возможна ошибка - направильный доступ к элементу
+/**
+ * @brief EngineManager::activateEngine - по приходу ответа от DataManager с массивом указателей, приводит адреса к типу функции.
+ * Для движков массив содержит два указателя - первый createEngine, второй destroyEngine, в таблице функций указываются
+ * сокращённо - create и destroy.
+ * @param pointers - указатель на массив указателей
+ */
+void EngineManager::activateEngine(std::vector<void*> pointers) {
+
+    if (pointers.empty()) {
+        std::cerr << "No function pointers provided";
+        return;
+    }
+
+    for (size_t i = 0; i < pointers.size(); ++i) {
+        if (pointers[i] == nullptr) {
+            std::cerr << "Pointer at index " << i << " is null";
+            return;
         }
-    } else {
-        // уведомление об ошибке
-        acptr->getEventManager().sendMessage(AppMessage(name, "error", "Данные об ошибке"));
+    }
+
+    if (pointers.size() < 1 || pointers[0] == nullptr) {
+        std::cerr << "Invalid engine parameters";
+        return;
+    }
+
+    auto ce = reinterpret_cast<CreateEngine>(pointers[0]);
+    if (!ce) {
+        std::cerr << "Invalid CreateEngine pointer";
+        return;
+    }
+
+    engine = ce();
+    if (!engine) {
+        std::cerr << "Engine creation failed";
+        return;
+    }
+
+    engine->test();
+    try {
+        shared_ptr<UiPage> rp2 = engine->getUiRoot();
+        UiPage rp = *rp2;
+
+        std::cout << rp.title << std::endl;
+
+        acptr->getEventManager().sendMessage(AppMessage(name, "init_ui_eng", rp2));
+
+    } catch (...) {
+        std::cout << "this thing not gonna work u da";
     }
 
 }
@@ -77,4 +112,5 @@ void EngineManager::addNames(std::vector<std::string> names) {
     }
 
     acptr->getEventManager().sendMessage(AppMessage(name, "added_names", names.size()));
+    acptr->getEventManager().sendMessage(AppMessage(name, "update_engines_combo", enginesRegistry));
 }

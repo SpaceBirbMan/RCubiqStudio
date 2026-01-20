@@ -32,33 +32,33 @@ void Core::buildModel(std::any data) {
 void Core::buildGui() {
 
     auto deserialize_lambda = [this](const std::any& data) { this->deserializeCache(data); };
-    // Changed: lambda now takes a const std::any& argument
-    auto serialize_lambda = [this](const std::any& /* unused_data */) -> json { return this->serializeCache(); };
+    // // Changed: lambda now takes a const std::any& argument
+    // auto serialize_lambda = [this](const std::any& /* unused_data */) -> json { return this->serializeCache(); };
 
-    // Explicitly constructing std::function objects might help if needed, though direct initialization usually works:
-    std::function<void(const std::any&)> deserialize_wrapper = deserialize_lambda;
-    // Changed: type now matches the expected signature with const std::any&
-    std::function<json(const std::any&)> serialize_wrapper = serialize_lambda;
+    // // Explicitly constructing std::function objects might help if needed, though direct initialization usually works:
+    // std::function<void(const std::any&)> deserialize_wrapper = deserialize_lambda;
+    // // Changed: type now matches the expected signature with const std::any&
+    // std::function<json(const std::any&)> serialize_wrapper = serialize_lambda;
 
-    cacheForm cf_instance;
-    cf_instance.name = name;
-    cf_instance.desfn = deserialize_wrapper;
-    cf_instance.sefn = serialize_wrapper;
+    // cacheForm cf_instance;
+    // cf_instance.name = name;
+    // cf_instance.desfn = deserialize_wrapper;
+    // cf_instance.sefn = serialize_wrapper;
 
-    acptr->getEventManager().sendMessage(AppMessage(name, "sub_to_cache", cf_instance));
+    // acptr->getEventManager().sendMessage(AppMessage(name, "sub_to_cache", cf_instance));
 
-    UiButton button = UiButton();
-    button.name = "fst";
-    button.text = "idk";
+    // UiButton button = UiButton();
+    // button.name = "fst";
+    // button.text = "idk";
 
-    button.onClick = [this]() { this->startRendering(); };
+    // button.onClick = [this]() { this->startRendering(); };
 
-    // todo: смысл контейнера вместо страницы - передавать страницы в контейнере, чтобы не делать это много раз по отдельности
+    // // todo: смысл контейнера вместо страницы - передавать страницы в контейнере, чтобы не делать это много раз по отдельности
 
-    rootPage = std::make_shared<UiPage>();
-    rootPage->children.emplace_back(std::make_unique<UiButton>(button));
+    // rootPage = std::make_shared<UiPage>();
+    // rootPage->children.emplace_back(std::make_unique<UiButton>(button));
 
-    acptr->getEventManager().sendMessage(AppMessage(name, "init_ui_eng", rootPage));
+    // acptr->getEventManager().sendMessage(AppMessage(name, "init_ui_eng", rootPage));
 
 }
 

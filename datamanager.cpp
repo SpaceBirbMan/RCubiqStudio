@@ -1,6 +1,7 @@
 #include "datamanager.h"
 #include "filetypes.h"
 #include "shorts.h"
+#include "misc.h"
 
 DataManager::DataManager(AppCore* acptr) {
     this->appCorePtr = acptr;
@@ -39,12 +40,25 @@ void DataManager::tryToLoadCache() {
      appCorePtr->getEventManager().sendMessage(AppMessage(name, "cache_ok", 0));
 }
 
-void DataManager::resolveFuncTable(std::string path) {
-    funcMap map {};
-    DynamicLibrary lib = DynamicLibrary(path);
-    // логика запихивания методов в карту
+void DataManager::resolveFuncTable(LibMeta meta) {
 
-    appCorePtr->getEventManager().sendMessage(AppMessage(name, "engine_resolving_respond", map));
+    std::cout << "Started resolving" << std::endl;
+    // TODO: а если два движка откроется?
+    auto it = libsPool.find(meta.path);
+    if (it == libsPool.end()) {
+        auto lib = std::make_shared<DynamicLibrary>(meta.path);
+        auto result = libsPool.emplace(meta.path, lib);
+        it = result.first;
+    }
+
+    std::vector<void*> ptrs;
+    for (int i = 0; i < meta.func_names.size(); i++) {
+        ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+    }
+
+    appCorePtr->getEventManager().sendMessage(
+        AppMessage(name, "engine_resolving_respond", ptrs)
+        );
 }
 
 void DataManager::loadModel(std::vector<std::string> exts) {

@@ -6,6 +6,8 @@
 #include <any>
 #include <nlohmann/json.hpp>
 #include <deque>
+#include "dynamiclibrary.h"
+#include "AbstractUiNodes.h"
 
 using json = nlohmann::json;
 using payload = std::vector<uint8_t>; //байт-буфер для payload
@@ -39,6 +41,33 @@ enum UIElements {
     COMPONENT_TREE,
     SLIDER,
     BUTTON
+};
+
+class IModel {
+public:
+    virtual ~IModel() = default;
+    virtual std::shared_ptr<renderQueue> acquireRenderQueue() = 0;
+    virtual std::shared_ptr<std::deque<std::any>> acquireControlQueue() = 0;
+    virtual void processControl(const std::any& cmd) = 0;
+    virtual void subscribeToEvents(
+        const std::string& event,
+        std::function<void(const std::any&)> callback,
+        void* subscriber
+        ) = 0;
+    virtual void test();
+    virtual std::shared_ptr<UiPage> getUiRoot() = 0;
+};
+
+using CreateEngine = IModel* (*)(void);
+
+struct LibMeta {
+    std::string path;
+    std::vector<std::string> func_names;
+};
+
+struct EngineFuncs {
+    CreateEngine ce;
+    // ...
 };
 
 #endif // MISC_H
