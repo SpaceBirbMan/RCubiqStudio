@@ -22,41 +22,18 @@ public:
 
     void saveCache();
 
-    /**
-     * @brief pickCache вызывает десериализующие функции у подписчиков (порядок не уточнён) из массива
-     * json объектов
-     */
-    void distributeCache() {
+    void distributeCache();
+    void pickCache();
 
-        for (auto& pair : subscribers_deserfns) {
-        }
-
-    }
-
-    /**
-     * @brief pickCache вызывает сериализующие функции у подписчиков (порядок не уточнён) и сохраняет
-     * их в массив json объектов.
-     */
-    void pickCache() {
-
-        for (auto& pair : subscribers_serfns) {
-            writeCache(pair.second(0));
-        }
-
-        // на пока что, до поялвения автосейвов
-        saveCache();
-
-    }
-
+    nlohmann::json getCache() { return cache; }
 
 private:
 
-    void writeCache(nlohmann::json payload);
+    void writeCache(const CacheObject& object);
 
-    nlohmann::json cache = nlohmann::json::array();
-
-    std::unordered_map<std::string, void_func> subscribers_deserfns {};
-    std::unordered_map<std::string, std::function<nlohmann::json(const std::any&)>> subscribers_serfns {};
+    nlohmann::json cache = nlohmann::json::object();
+    std::unordered_map<std::string, std::function<void(const nlohmann::json&)>> subscribers_deserfns {};
+    std::unordered_map<std::string, std::function<nlohmann::json()>> subscribers_serfns {};
 
     FileLoader fileLoader;
     FileSaver fileSaver;

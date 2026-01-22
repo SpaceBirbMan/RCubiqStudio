@@ -19,9 +19,11 @@ public:
 
     std::string cacheKey() const override { return name; }
 
+    const std::string name = "EngineManager";
+
 private:
 
-    std::string name = "EngineManager";
+
 
     AppCore* acptr;
 
@@ -37,20 +39,16 @@ private:
 
     nlohmann::json serializeCache() const override {
         nlohmann::json j = {
-            // {"enginesRegistry", enginesRegistry}
-            {"enginesRegistry", "test"},
-            {"renderSettings", "CPU"},
-            {"mode", "flat"},
-            {"isCorrupted", "no"},
-            {"hadCrash", "no"}
+            {"enginesRegistry", enginesRegistry}
         };
         return j;
     }
 
-    void deserializeCache(const std::any& data) override {
-        auto j = std::any_cast<nlohmann::json>(data);
-        enginesRegistry = j["enginesRegistry"];
+    void deserializeCache(const nlohmann::json& data) override {
+        enginesRegistry = data["enginesRegistry"];
     }
+
+    void preInitialize();
 
     void initialize();
 

@@ -13,6 +13,8 @@ EngineManager::EngineManager(AppCore* acptr) {
 
     // ответ на инициализацию
     acptr->getEventManager().subscribe("initialize", &EngineManager::initialize, this);
+    acptr->getEventManager().subscribe("pre_initialize", &EngineManager::preInitialize, this);
+    acptr->getEventManager().subscribe("askToReady", &EngineManager::preInitialize, this);
     // ответ на возврат ссылок плагина
     acptr->getEventManager().subscribe("engine_resolving_respond", &EngineManager::activateEngine, this);
     // acptr->getEventManager().subscribe("general_init_ok", &EngineManager::activateEngine, this);
@@ -28,23 +30,24 @@ void EngineManager::setFuncs(funcMap map) {
     // this->currentEngineFunctions = map;
 }
 
-void EngineManager::initialize() {
-    acptr->getEventManager().sendMessage(AppMessage(name, "init_started", 0));
-    auto deserialize_lambda = [this](const std::any& data) { this->deserializeCache(data); };
-    // Changed: lambda now takes a const std::any& argument
-    auto serialize_lambda = [this](const std::any& /* unused_data */) -> json { return this->serializeCache(); };
+void EngineManager::preInitialize() {
 
-    // Explicitly constructing std::function objects might help if needed, though direct initialization usually works:
-    std::function<void(const std::any&)> deserialize_wrapper = deserialize_lambda;
-    // Changed: type now matches the expected signature with const std::any&
-    std::function<json(const std::any&)> serialize_wrapper = serialize_lambda;
+    auto deserialize_lambda = [this](const nlohmann::json& data) { this->deserializeCache(data); };
+    auto serialize_lambda = [this]() -> json { return this->serializeCache(); };
+    std::function<void(const nlohmann::json&)> deserialize_wrapper = deserialize_lambda;
+    std::function<json()> serialize_wrapper = serialize_lambda;
 
     cacheForm cf_instance;
     cf_instance.name = name;
     cf_instance.desfn = deserialize_wrapper;
     cf_instance.sefn = serialize_wrapper;
-    acptr->getEventManager().sendMessage(AppMessage(name, "sub_to_cache", cf_instance));
 
+    acptr->getEventManager().sendMessage(AppMessage(name, "sub_to_cache", cf_instance));
+    acptr->getEventManager().sendMessage(AppMessage(name, "module_subscribed", name));
+}
+
+void EngineManager::initialize() {
+    acptr->getEventManager().sendMessage(AppMessage(name, "init_started", 0));
     acptr->getEventManager().sendMessage(AppMessage(name, "build_gui", 0));
 }
 
@@ -88,10 +91,10 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
 
     engine->test();
     try {
-        shared_ptr<UiPage> rp2 = engine->getUiRoot();
-        UiPage rp = *rp2;
+        shared_ptr<std::vector<UiPage>> rp2 = engine->getUiPages();
+        vector<UiPage> rp = *rp2;
 
-        std::cout << rp.title << std::endl;
+        std::cout << rp.size() << std::endl;
 
         acptr->getEventManager().sendMessage(AppMessage(name, "init_ui_eng", rp2));
 

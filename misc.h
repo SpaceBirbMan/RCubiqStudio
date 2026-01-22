@@ -8,6 +8,7 @@
 #include <deque>
 #include "dynamiclibrary.h"
 #include "AbstractUiNodes.h"
+#include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
 using payload = std::vector<uint8_t>; //байт-буфер для payload
@@ -15,8 +16,8 @@ using void_func = std::function<void(const std::any&)>;
 
 struct cacheForm {
     std::string name;
-    void_func desfn; // сюда помещается функция десериализации кеша
-    std::function<nlohmann::json(const std::any&)> sefn; // сюда помещается функция сериализации кеша
+    std::function<void(const nlohmann::json&)> desfn;   // десериализация: принимает json
+    std::function<nlohmann::json()> sefn;               // сериализация: возвращает json
 };
 
 struct Frame {
@@ -36,13 +37,6 @@ struct subStruct {
         : name(std::move(m)), callback(std::move(cb)) {}
 };
 
-enum UIElements {
-    CONTROL_TABLE,
-    COMPONENT_TREE,
-    SLIDER,
-    BUTTON
-};
-
 class IModel {
 public:
     virtual ~IModel() = default;
@@ -55,7 +49,7 @@ public:
         void* subscriber
         ) = 0;
     virtual void test();
-    virtual std::shared_ptr<UiPage> getUiRoot() = 0;
+    virtual std::shared_ptr<std::vector<UiPage>> getUiPages() = 0;
 };
 
 using CreateEngine = IModel* (*)(void);
@@ -68,6 +62,11 @@ struct LibMeta {
 struct EngineFuncs {
     CreateEngine ce;
     // ...
+};
+
+struct CacheObject {
+    nlohmann::json object;
+    std::string name;
 };
 
 #endif // MISC_H

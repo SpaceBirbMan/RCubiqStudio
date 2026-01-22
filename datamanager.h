@@ -23,9 +23,11 @@ public:
     void dummy(int a) { std::cout << "a1" << std::endl;}
     void dummy2() { std::cout << "a2" << std::endl;}
 
+    const std::string name = "DataManager"; // имя модуля, используется в методах с описанием отправителя/получаетля
+
 private:
 
-    std::string name = "DataManager"; // имя модуля, используется в методах с описанием отправителя/получаетля
+
 
     AppCore* appCorePtr = nullptr; // ядро
 

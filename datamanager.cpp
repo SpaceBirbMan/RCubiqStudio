@@ -32,12 +32,17 @@ void DataManager::initialize() {
 }
 
 void DataManager::tryToLoadCache() {
-    // cacheManager.loadCache();
-    // if () {
-    //     appCorePtr->getEventManager().sendMessage(AppMessage(name, "cache_err", 0));
-    //     return;
-    // }
-     appCorePtr->getEventManager().sendMessage(AppMessage(name, "cache_ok", 0));
+    try {
+        cacheManager.loadCache();
+        if (!this->cacheManager.getCache().empty()) {
+            cacheManager.distributeCache();
+        } else {
+            std::cerr << "Cache is empty" << std::endl;
+        }
+        appCorePtr->getEventManager().sendMessage(AppMessage(name, "cache_ok", 0));
+    } catch (...) {
+        std::cerr << "Cache loading error" << std::endl;
+    }
 }
 
 void DataManager::resolveFuncTable(LibMeta meta) {

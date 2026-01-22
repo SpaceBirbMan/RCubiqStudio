@@ -66,9 +66,11 @@ void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> t
     // tw->resizeColumnsToContents();
 }
 
-void MainWindow::initDynamicUi(std::shared_ptr<UiPage> root) {
-    QMetaObject::invokeMethod(this, [this, root]() { // это нужно из-за того, что рендер может вызываться не из ui-потока qt
-        UiRenderer::renderToTabWidget(root, ui->leftPanel);
+void MainWindow::initDynamicUi(shared_ptr<std::vector<UiPage>> pages) {
+    QMetaObject::invokeMethod(this, [this, pages]() { // это нужно из-за того, что рендер может вызываться не из ui-потока qt
+        for (UiPage root : *pages) {
+            UiRenderer::renderToTabWidget(std::make_shared<UiPage>(root), ui->leftPanel);
+        }
     }, Qt::QueuedConnection);
 }
 

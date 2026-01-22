@@ -29,7 +29,7 @@ private:
 
     void showCacheErrorMessage();
     void setControlsTable(std::unordered_map<std::string, std::string> table);
-    void initDynamicUi(std::shared_ptr<UiPage> root);
+    void initDynamicUi(shared_ptr<std::vector<UiPage>> pages);
     void connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr);
     void addEngineFile();
     void switchActiveEngine(const QString& engine);

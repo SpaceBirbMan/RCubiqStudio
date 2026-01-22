@@ -46,7 +46,7 @@ private:
         return j;
     }
 
-    void deserializeCache(const std::any& data) override {
+    void deserializeCache(const nlohmann::json& data) override {
     }
 
     std::thread renderThread;
