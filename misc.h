@@ -9,6 +9,7 @@
 #include "dynamiclibrary.h"
 #include "AbstractUiNodes.h"
 #include "nlohmann/json.hpp"
+#include <optional>
 
 using json = nlohmann::json;
 using payload = std::vector<uint8_t>; //байт-буфер для payload
@@ -30,11 +31,12 @@ struct Frame {
 using renderQueue = std::deque<Frame>;
 
 struct subStruct {
+    std::string receiver = "N/A";
     std::string name;
-    std::function<void(const std::any&)> callback; // todo: Мб ссылка нужна
+    std::function<void(const std::any&)> callback;
 
-    subStruct(std::string m, std::function<void(const std::any&)> cb)
-        : name(std::move(m)), callback(std::move(cb)) {}
+    subStruct(std::string r, std::string m, std::function<void(const std::any&)> cb)
+        : receiver(std::move(r)), name(std::move(m)), callback(std::move(cb)) {}
 };
 
 class IModel {
@@ -48,11 +50,18 @@ public:
         std::function<void(const std::any&)> callback,
         void* subscriber
         ) = 0;
-    virtual void test();
+    virtual void test() = 0;
     virtual std::shared_ptr<std::vector<UiPage>> getUiPages() = 0;
 };
 
+class IRenderer {
+public:
+    virtual ~IRenderer() = default;
+    virtual void test() = 0;
+};
+
 using CreateEngine = IModel* (*)(void);
+using CreateRenderer = IRenderer* (*)(void);
 
 struct LibMeta {
     std::string path;
@@ -63,6 +72,7 @@ struct EngineFuncs {
     CreateEngine ce;
     // ...
 };
+
 
 struct CacheObject {
     nlohmann::json object;

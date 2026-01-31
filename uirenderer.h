@@ -15,6 +15,9 @@
 #include <QDial>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
+#include <QTreeView>
+#include <QPixmap>
+#include <QFileDialog>
 
 #include "AbstractUiNodes.h"
 
@@ -24,6 +27,8 @@ public:
     static QWidget* renderContainer(UiContainer* container);
     static QWidget* renderGroup(UiGroup* group);
     static QWidget* renderPage(UiPage* page);
+    static QWidget* renderTree(UiTreeView* tree);
+    static QWidget* renderImageBox(UiImageBox* imgBox);
 
     static void renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget);
 };

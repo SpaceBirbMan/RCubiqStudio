@@ -42,19 +42,8 @@ private:
 
     void addToReady(std::string name);
 
-    void askToReady() {
-
+    void askToPreInit() {
         eventManager.sendMessage(AppMessage(name, "pre_initialize", 0));
-
-        // std::thread tw(wait, this); ломает всё, напрвильно создан
-        // tw.join();
-
-        eventManager.sendMessage(AppMessage(name, "ask_cache", 0));
-    }
-
-    void wait() {
-        while (readyModules.size() < modules.size()) { // ожидание ответа от модулей
-        }
     }
 
 };

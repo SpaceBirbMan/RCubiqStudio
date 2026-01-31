@@ -45,6 +45,7 @@ private:
     void resolveFuncTable(LibMeta meta);
 
     void saveFiles(std::any data);
+    void resolveApi(LibMeta meta);
 
 };
 

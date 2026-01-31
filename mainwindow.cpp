@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include <QQuickView>
-#include "ViewportWidget.h"
+#include "viewportwidget.h"
 
 //QQuickView* view = new QQuickView(); // через эту тему лучше пойдёт рендер
 // надо размещать отдельно, должно пойти с любым rend-back
@@ -29,6 +29,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
     connect(ui->includeEngineMenuButton, &QAction::triggered, this, MainWindow::addEngineFile);
     connect(ui->enginesComboBox, &QComboBox::currentTextChanged,
             this, &MainWindow::switchActiveEngine);
+    connect(ui->action_Render_API, &QAction::triggered, this, &MainWindow::setRenderApi);
 }
 
 MainWindow::~MainWindow()
@@ -111,7 +112,7 @@ void MainWindow::addEngineFile() {
         parentWidget,
         "Выберите файл движка",
         QDir::homePath(),
-        "Файлы движка (*.dll);;Все файлы (*)"
+        "Динамические библиотеки (*.dll);;Все файлы (*)"
         );
 
     std::vector<std::string> names {};
@@ -138,5 +139,18 @@ void MainWindow::updateEnginesCombo(const std::set<std::string> &names) {
     for (std::string name : names) {
         ui->enginesComboBox->addItem(QString::fromStdString(name));
     }
+}
 
+void MainWindow::setRenderApi() {
+    QWidget* parentWidget = ui->centralwidget;
+
+    QString fileName = QFileDialog::getOpenFileName(
+        parentWidget,
+        "Выберите файл API",
+        QDir::homePath(),
+        "Динамические библиотеки (*.dll);;Все файлы (*)"
+        );
+
+    std::cout << fileName.toStdString() << std::endl;
+    core->getEventManager().sendMessage(AppMessage("UI", "set_render_api", fileName.toStdString()));
 }

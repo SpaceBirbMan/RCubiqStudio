@@ -5,7 +5,7 @@
 void MessageProcessor::process() {
     std::unique_lock<std::mutex> lock(mut);
 
-    while (!stopFlag) { // выяснить, почему метод работает на while
+    while (!stopFlag) {
         // ждём сигнал либо новые данные
         cv.wait(lock, [&]() {
             return stopFlag || !qPtr.is_empty();
@@ -16,16 +16,8 @@ void MessageProcessor::process() {
         // обрабатываем все сообщения, пока они есть
         while (!qPtr.is_empty()) {
             auto msg = qPtr.pollMessage();
-            std::cout << ">>" + msg.getSender() + " " + msg.getMessage() << std::endl;
-            lock.unlock(); // выяснить, зачем тут мьютекс отпускать
-            // for (const auto& subscriber_pair : subsTable) {
-            //     const std::string& key = subscriber_pair.first;
-            //     const auto& callback = subscriber_pair.second;
-            //     if (msg.getMessage() == key) { // почему cache_err игнорится? Коллизия?
-
-            //         callback(msg.getData()); // пока поддерживает один параметр todo: Сделать несколько
-            //     }
-            // }
+            std::cout << "[SENDER] " + msg.getSender() + " [MESSAGE] " + msg.getMessage() << std::endl;
+            lock.unlock();
 
             for (const subStruct sstr : subsVector) {
                 if (msg.getMessage() == sstr.name) {
@@ -46,6 +38,7 @@ void MessageProcessor::process() {
                         std::cerr << "unknown exception in callback '"
                                   << sstr.name << "'" << std::endl;
                     }
+                    std::cout << "[RECEIVER] " << sstr.receiver << std::endl;
                 }
             }
 

@@ -133,6 +133,10 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
         return d;
     }
 
+    if (auto img = dynamic_cast<UiImageBox*>(elem)) {
+        return renderImageBox(img);
+    }
+
     if (auto pb = dynamic_cast<UiProgressBar*>(elem)) {
         QProgressBar* p = new QProgressBar;
         p->setRange(pb->minValue, pb->maxValue);
@@ -155,6 +159,10 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
         return box;
     }
 
+    if (auto tv = dynamic_cast<UiTreeView*>(elem)) {
+
+    }
+
     return new QWidget;  // fallback
 }
 
@@ -162,15 +170,68 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
 //  Containers
 ///////////////////////////////////////////////////////////////
 
-QWidget* UiRenderer::renderContainer(UiContainer* container) {
+QWidget* UiRenderer::renderTree(UiTreeView* tree) {
+    QWidget* tr = new QWidget;
+
+
+    for (auto& ch : tree->children ) {
+
+    }
+}
+
+QWidget* UiRenderer::renderImageBox(UiImageBox* imgBox) {
+    QPushButton* btn = new QPushButton;
+    btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    btn->setMinimumSize(64, 64);
+    btn->setStyleSheet("QPushButton { border: 1px dashed gray; }");
+
+    auto updateButton = [btn, imgBox]() {
+        if (imgBox->hasImage && !imgBox->imagePath.empty()) {
+            QPixmap pixmap(QString::fromStdString(imgBox->imagePath));
+            if (!pixmap.isNull()) {
+                btn->setIcon(QIcon(pixmap));
+                btn->setIconSize(pixmap.size().scaled(btn->size() - QSize(10, 10), Qt::KeepAspectRatio));
+                btn->setText("");
+                btn->setStyleSheet("");
+                return;
+            }
+        }
+        btn->setIcon(QIcon());
+        btn->setText("Select image");
+        btn->setStyleSheet("QPushButton { border: 1px dashed gray; }");
+    };
+
+    updateButton();
+
+    QObject::connect(btn, &QPushButton::clicked, [btn, imgBox, updateButton]() {
+        QString filePath = QFileDialog::getOpenFileName(
+            btn->window(),
+            "Select Image",
+            "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp)"
+            );
+
+        if (!filePath.isEmpty()) {
+            imgBox->setImage(filePath.toStdString());
+            updateButton(); // обновляем вид
+        }
+    });
+
+    return btn;
+}
+
+QWidget* UiRenderer::renderContainer(UiContainer* container) { // тут именно вертикальный, TODO: расширить поддержку ориентаций расположения
     QWidget* w = new QWidget;
     auto lay = new QVBoxLayout;
+
+    w->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     w->setLayout(lay);
 
     for (auto& ch : container->children) {
         QWidget* child = renderElement(ch.get());
         lay->addWidget(child);
     }
+    lay->addStretch();
 
     return w;
 }
@@ -187,8 +248,6 @@ QWidget* UiRenderer::renderGroup(UiGroup* group) {
 }
 
 QWidget* UiRenderer::renderPage(UiPage* page) {
-    // страница сама по себе = контейнер +
-    // заголовок будет handled в TabWidget
 
     std::cout << "renderPage CALLED" << std::endl;
     return renderContainer(page);

@@ -2,6 +2,7 @@
 #include "datamanager.h"
 #include "enginemanager.h"
 #include "testEng/core.h"
+#include "rendermanager.h"
 
 #include <QApplication>
 #include <QLocale>
@@ -46,11 +47,13 @@ int main(int argc, char *argv[])
     DataManager *dtm = new DataManager(core);
     EngineManager *egm = new EngineManager(core);
     MainWindow mainWindow(nullptr, core);
+    RenderManager *renm = new RenderManager(core);
 
     //core->registerModule(dtm->name);
     core->registerModule(egm->name);
+    core->registerModule(renm->cacheKey());
 
-    core->getEventManager().sendMessage(AppMessage("main", "askToReady", 0)); // вместо нуля можно аргументы
+    core->getEventManager().sendMessage(AppMessage("main", "askToPreInit", 0)); // вместо нуля можно аргументы
 #ifndef QML
     mainWindow.show();
 #endif

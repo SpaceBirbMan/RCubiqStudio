@@ -26,7 +26,7 @@ public:
     // }
 
     void subscribe(const std::string& msg, std::function<void(const std::any&)> fn) {
-        subscribers.emplace_back(subStruct(msg, fn));
+        subscribers.emplace_back(subStruct("N/A", msg, fn));
     }
 
     // template <typename C>
@@ -41,21 +41,33 @@ public:
         auto callback = [instance, method](const std::any&) {
             (instance->*method)();
         };
-        subscribers.emplace_back(msg, std::move(callback));
+        subscribers.emplace_back("N/A", msg, std::move(callback));
     }
+
+    template <typename C>
+    void subscribe(const std::string& rec, const std::string& msg, void (C::*method)(), C* instance) {
+        auto callback = [instance, method](const std::any&) {
+            (instance->*method)();
+        };
+        subscribers.emplace_back(rec, msg, std::move(callback));
+    }
+
 
     /**
      * @brief subscribe Подписывает модуль на сообщения
      * @param msg Сообщение, на которое отреагирует метод модуля
      * @param instance Метод и модуль, из которого вызывается метод (&класс::метод, *модуль)
      */
-    // template <typename T, typename C>
-    // void subscribe(const std::string& msg, void (C::*method)(T), C* instance) {
-    //     subscribers[msg] = [=](const std::any& data) {
-    //         if (data.type() == typeid(T))
-    //             (instance->*method)(std::any_cast<T>(data));
-    //     };
-    // }
+
+    template <typename T, typename C>
+    void subscribe(const std::string& rec, const std::string& msg, void (C::*method)(T), C* instance) {
+        auto callback = [instance, method](const std::any& data) {
+            if (data.type() == typeid(T)) {
+                (instance->*method)(std::any_cast<T>(data));
+            }
+        };
+        subscribers.emplace_back(rec, msg, std::move(callback));
+    }
 
     template <typename T, typename C>
     void subscribe(const std::string& msg, void (C::*method)(T), C* instance) {
@@ -64,7 +76,7 @@ public:
                 (instance->*method)(std::any_cast<T>(data));
             }
         };
-        subscribers.emplace_back(msg, std::move(callback));
+        subscribers.emplace_back("N/A", msg, std::move(callback));
     }
 
 

@@ -12,17 +12,17 @@ EngineManager::EngineManager(AppCore* acptr) {
     // todo: А если данных в таблице инициализации будет очень много, насколько целесообразно копирование?
 
     // ответ на инициализацию
-    acptr->getEventManager().subscribe("initialize", &EngineManager::initialize, this);
-    acptr->getEventManager().subscribe("pre_initialize", &EngineManager::preInitialize, this);
-    acptr->getEventManager().subscribe("askToReady", &EngineManager::preInitialize, this);
+    acptr->getEventManager().subscribe(name, "initialize", &EngineManager::initialize, this);
+    acptr->getEventManager().subscribe(name, "pre_initialize", &EngineManager::preInitialize, this);
+    acptr->getEventManager().subscribe(name, "askToReady", &EngineManager::preInitialize, this);
     // ответ на возврат ссылок плагина
-    acptr->getEventManager().subscribe("engine_resolving_respond", &EngineManager::activateEngine, this);
+    acptr->getEventManager().subscribe(name, "engine_resolving_respond", &EngineManager::activateEngine, this);
     // acptr->getEventManager().subscribe("general_init_ok", &EngineManager::activateEngine, this);
 
-    acptr->getEventManager().subscribe("set_data", &EngineManager::deserializeCache, this);
+    acptr->getEventManager().subscribe(name, "set_data", &EngineManager::deserializeCache, this);
 
-    acptr->getEventManager().subscribe("start_drawing_frames", &EngineManager::getActiveFrames, this);
-    acptr->getEventManager().subscribe("add_engines_names", &EngineManager::addNames, this);
+    acptr->getEventManager().subscribe(name, "start_drawing_frames", &EngineManager::getActiveFrames, this);
+    acptr->getEventManager().subscribe(name, "add_engines_names", &EngineManager::addNames, this);
 }
 
 void EngineManager::setFuncs(funcMap map) {
@@ -48,6 +48,11 @@ void EngineManager::preInitialize() {
 
 void EngineManager::initialize() {
     acptr->getEventManager().sendMessage(AppMessage(name, "init_started", 0));
+    std::vector<std::string> tmp_names {};
+    for (std::string name : enginesRegistry) {
+        tmp_names.emplace_back(name);
+    }
+    acptr->getEventManager().sendMessage(AppMessage(name, "add_engines_names", tmp_names));
     acptr->getEventManager().sendMessage(AppMessage(name, "build_gui", 0));
 }
 

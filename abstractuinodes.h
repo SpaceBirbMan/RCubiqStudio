@@ -96,6 +96,11 @@ public:
     unsigned short index = 0;
 };
 
+class UiTreeView : public UiContainer {
+public:
+
+};
+
 //////////////////////////////////////////////////////////
 // Display elements
 //////////////////////////////////////////////////////////
@@ -119,6 +124,32 @@ public:
     int minValue = 0;
     int maxValue = 100;
     int value = 0;
+};
+
+class UiImageBox : public UiElement {
+public:
+    std::string imagePath; // путь к изображению или URI
+    bool hasImage = false;
+
+    // Опциональные коллбэки
+    std::function<void(const std::string&)> onImageSet;   // вызывается при установке изображения
+    std::function<void()> onImageCleared;                 // при очистке
+    std::function<void()> onRequestImage;                 // триггер для открытия диалога/DnD
+
+    // Методы для внешнего управления (опционально)
+    void setImage(const std::string& path) {
+        imagePath = path;
+        hasImage = !path.empty();
+        if (onImageSet && hasImage) onImageSet(path);
+        if (onChange) onChange();
+    }
+
+    void clearImage() {
+        imagePath.clear();
+        hasImage = false;
+        if (onImageCleared) onImageCleared();
+        if (onChange) onChange();
+    }
 };
 
 //////////////////////////////////////////////////////////

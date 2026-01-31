@@ -6,20 +6,15 @@
 DataManager::DataManager(AppCore* acptr) {
     this->appCorePtr = acptr;
 
-    acptr->getEventManager().subscribe("initialize", &DataManager::initialize, this);
-
-    acptr->getEventManager().subscribe("ask_cache", &DataManager::tryToLoadCache, this);
-
-    acptr->getEventManager().subscribe("engine_resolving_request", &DataManager::resolveFuncTable, this);
-
-    acptr->getEventManager().subscribe("model_markdown_request", &DataManager::loadModel, this);
-
-    acptr->getEventManager().subscribe("sub_to_cache", &CacheManager::cacheSubscribe, &this->cacheManager);
-
-    acptr->getEventManager().subscribe("save", &DataManager::saveFiles, this);
-    acptr->getEventManager().subscribe("new", &DataManager::dummy2, this);
-
-    acptr->getEventManager().subscribe("save_cache", &CacheManager::pickCache, &this->cacheManager);
+    acptr->getEventManager().subscribe(name, "initialize", &DataManager::initialize, this);
+    acptr->getEventManager().subscribe(name, "ask_cache", &DataManager::tryToLoadCache, this);
+    acptr->getEventManager().subscribe(name, "engine_resolving_request", &DataManager::resolveFuncTable, this);
+    acptr->getEventManager().subscribe(name, "model_markdown_request", &DataManager::loadModel, this);
+    acptr->getEventManager().subscribe(name, "sub_to_cache", &CacheManager::cacheSubscribe, &this->cacheManager);
+    acptr->getEventManager().subscribe(name, "save", &DataManager::saveFiles, this);
+    acptr->getEventManager().subscribe(name, "new", &DataManager::dummy2, this);
+    acptr->getEventManager().subscribe(name, "save_cache", &CacheManager::pickCache, &this->cacheManager);
+    acptr->getEventManager().subscribe(name, "resolve_render_api_request", &DataManager::resolveApi, this);
 
 }
 
@@ -64,6 +59,25 @@ void DataManager::resolveFuncTable(LibMeta meta) {
     appCorePtr->getEventManager().sendMessage(
         AppMessage(name, "engine_resolving_respond", ptrs)
         );
+}
+
+// TODO: Функции друг на друга слишком похожи, имеет смысл унифицировать для отправки в этот менеджер, а ответное сообщение помещать в LibMeta
+
+void DataManager::resolveApi(LibMeta meta) {
+
+    auto it = libsPool.find(meta.path);
+    if (it == libsPool.end()) {
+        auto lib = std::make_shared<DynamicLibrary>(meta.path);
+        auto result = libsPool.emplace(meta.path, lib);
+        it = result.first;
+    }
+
+    std::vector<void*> ptrs;
+    for (int i = 0; i < meta.func_names.size(); i++) {
+        ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+    }
+
+    this->appCorePtr->getEventManager().sendMessage(AppMessage(name,"resolve_render_api_respond", ptrs));
 }
 
 void DataManager::loadModel(std::vector<std::string> exts) {

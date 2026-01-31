@@ -72,17 +72,19 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         outputdevice.h
 
 
-        renderbridgeqt.h renderbridgeqt.cpp
-        qrenderitem.h qrenderitem.cpp
+
+
         framequeue.h framequeue.cpp
         frameview.h frameview.cpp
 
-        qttextureimpl.h qttextureimpl.cpp
+
         commandlistimpl.h commandlistimpl.cpp
-        qtcontextimpl.h qtcontextimpl.cpp
+
         mainwindow2.ui
         main.qml
-        ViewportWidget.h
+        viewportwidget.h
+        rendermanager.h rendermanager.cpp
+        renderapi.h
 
 
 
@@ -114,7 +116,6 @@ target_link_libraries(
     M3 PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Quick
     Qt${QT_VERSION_MAJOR}::QuickWidgets
-    # Qt 6 из-за зависимости от RHI модуля
     Qt6::Gui
     Qt6::QuickControls2
     Qt6::GuiPrivate
