@@ -21,12 +21,12 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
     core->getEventManager().subscribe("cache_err", &MainWindow::showCacheErrorMessage, this);
     core->getEventManager().subscribe("send_control_table", &MainWindow::setControlsTable, this);
     core->getEventManager().subscribe("init_ui_eng", &MainWindow::initDynamicUi, this);
-    core->getEventManager().subscribe("send_frame_queue", &MainWindow::connectFramesToViewport, this);
+    //core->getEventManager().subscribe("send_frame_queue", &MainWindow::connectFramesToViewport, this);
     core->getEventManager().subscribe("update_engines_combo", &MainWindow::updateEnginesCombo, this);
-
-    connect(ui->newFileMenuButton, &QAction::triggered, this, MainWindow::onNewFileClicked);
-    connect(ui->saveFileMenuButton, &QAction::triggered, this, MainWindow::onSaveFileClicked);
-    connect(ui->includeEngineMenuButton, &QAction::triggered, this, MainWindow::addEngineFile);
+    // TODO: мб стоит делать отдельный класс для подписки на сообщения
+    connect(ui->newFileMenuButton, &QAction::triggered, this, &MainWindow::onNewFileClicked);
+    connect(ui->saveFileMenuButton, &QAction::triggered, this, &MainWindow::onSaveFileClicked);
+    connect(ui->includeEngineMenuButton, &QAction::triggered, this, &MainWindow::addEngineFile);
     connect(ui->enginesComboBox, &QComboBox::currentTextChanged,
             this, &MainWindow::switchActiveEngine);
     connect(ui->action_Render_API, &QAction::triggered, this, &MainWindow::setRenderApi);
@@ -50,21 +50,7 @@ void MainWindow::onSaveFileClicked() {
 }
 
 void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> table) {
-    // QTableWidget* tw = ui->tableWidget;
 
-    // tw->clear(); // очищает данные и заголовки
-    // tw->setColumnCount(2);
-    // tw->setHorizontalHeaderLabels({"Контроллер модели", "Контроллер устройства"});
-    // tw->setRowCount(static_cast<int>(table.size()));
-
-    // int i = 0;
-    // for (const auto& pair : table) {
-    //     tw->setItem(i, 0, new QTableWidgetItem(QString::fromStdString(pair.first)));
-    //     tw->setItem(i, 1, new QTableWidgetItem(QString::fromStdString(pair.second)));
-    //     ++i;
-    // }
-
-    // tw->resizeColumnsToContents();
 }
 
 void MainWindow::initDynamicUi(shared_ptr<std::vector<UiPage>> pages) {
@@ -76,32 +62,10 @@ void MainWindow::initDynamicUi(shared_ptr<std::vector<UiPage>> pages) {
 }
 
 void MainWindow::connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr) {
-    QMetaObject::invokeMethod(this, [this, queuePtr]() {
-        frameQueue = queuePtr;
-        if (!renderTimer) {
-            renderTimer = new QTimer(this);
-            connect(renderTimer, &QTimer::timeout, this, &MainWindow::renderNextFrame);
-            renderTimer->start(16); // ~60 FPS
-        }
-    }, Qt::QueuedConnection);
 }
 
 void MainWindow::renderNextFrame() {
-    if (!frameQueue || frameQueue->empty()) return;
 
-    Frame frame = std::move(frameQueue->front());
-    frameQueue->pop_front();
-
-    QImage img(frame.pixels.data(), frame.width, frame.height,
-               frame.stride, QImage::Format_RGBA8888);
-
-    QImage imgCopy = img.copy();
-
-    QWidget* viewport = ui->viewport;
-    static_cast<ViewportWidget*>(ui->viewport)->setImage(imgCopy);
-    viewport->update();
-
-    currentImage = imgCopy;
 }
 
 void MainWindow::addEngineFile() {

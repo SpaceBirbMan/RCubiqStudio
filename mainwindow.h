@@ -37,9 +37,6 @@ private:
     void setRenderApi();
 
     std::shared_ptr<renderQueue> frameQueue = nullptr;
-    QTimer* renderTimer = nullptr;
-
-    QImage currentImage;
 
     void renderNextFrame();
 

@@ -6,15 +6,16 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(QT_VERSION_MAJOR 6)
 
 # Qt6 является основным, но если найти ему замену, можно будет выбрать и Qt5 + будет проще заменить графический фреймворк
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2 Quick3D)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2 Quick3D)
+find_package(PkgConfig REQUIRED)
 
 set(TS_FILES M3_ru_RU.ts)
 
@@ -71,9 +72,6 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         outputdevice.cpp
         outputdevice.h
 
-
-
-
         framequeue.h framequeue.cpp
         frameview.h frameview.cpp
 
@@ -85,10 +83,10 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         viewportwidget.h
         rendermanager.h rendermanager.cpp
         renderapi.h
-
-
-
-
+        viewportwidget.cpp
+        cube.vs.sc
+        cube.fs.sc
+        varying.def.sc
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET M3 APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -112,6 +110,13 @@ else()
     qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 endif()
 
+
+
+target_include_directories(M3 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-d") # Буква d означает debug-сборку библиотеки
+target_include_directories(M3 PRIVATE ${BGFX_ROOT}/include)
+target_link_directories(M3 PRIVATE ${BGFX_ROOT}/lib)
+add_compile_definitions(BX_CONFIG_DEBUG=1)
 target_link_libraries(
     M3 PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Quick
@@ -119,7 +124,82 @@ target_link_libraries(
     Qt6::Gui
     Qt6::QuickControls2
     Qt6::GuiPrivate
+    bgfx
+    bx
+    bimg
 )
+
+# set(BX_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bx")
+# set(BIMG_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bimg")
+# set(BGFX_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bgfx")
+# add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bgfx.cmake" bgfx-build)
+
+file(GLOB VERTEX_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.vs.sc")
+file(GLOB FRAGMENT_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.fs.sc")
+
+message(STATUS "Vertex shaders: ${VERTEX_SHADERS}")
+message(STATUS "Fragment shaders: ${FRAGMENT_SHADERS}")
+
+# --- Shader compilation ---
+set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
+file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
+
+# Список скомпилированных бинарников
+set(COMPILED_SHADERS "")
+
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(SHADER_RENDERER "glsl")
+    set(SHADER_PROFILE "440")
+elseif(WIN32)
+    set(SHADER_RENDERER "dx12")
+    set(SHADER_PROFILE "s_6_9")
+elseif(APPLE)
+    set(SHADER_RENDERER "metal")
+    set(SHADER_PROFILE "metal31-14")
+else()
+    set(SHADER_RENDERER "glsl")
+    set(SHADER_PROFILE "440")
+endif()
+
+function(compile_shader TYPE INPUT OUTPUT_DIR RENDERER PROFILE)
+    get_filename_component(FILE_NAME ${INPUT} NAME_WE)
+    set(OUTPUT_BIN "${OUTPUT_DIR}/${FILE_NAME}_${TYPE}.bin")
+    add_custom_command(
+        OUTPUT ${OUTPUT_BIN}
+        COMMAND ${SHADERC_EXECUTABLE}
+            -f ${INPUT}
+            -o ${OUTPUT_BIN}
+            --type ${TYPE}
+            --platform ${RENDERER}
+            --profile ${PROFILE}
+        DEPENDS ${INPUT}
+        COMMENT "Compiling ${TYPE} shader: ${INPUT} -> ${OUTPUT_BIN}"
+        VERBATIM
+    )
+
+    # Добавляем в родительский список
+    set(COMPILED_SHADERS ${COMPILED_SHADERS} ${OUTPUT_BIN} PARENT_SCOPE)
+endfunction()
+
+message(STATUS "VERTEX_SHADERS = ${VERTEX_SHADERS}")
+message(STATUS "FRAGMENT_SHADERS = ${FRAGMENT_SHADERS}")
+message(STATUS "SHADER_OUTPUT_DIR = ${SHADER_OUTPUT_DIR}")
+message(STATUS "SHADER_RENDERER = ${SHADER_RENDERER}")
+
+# Компилируем
+foreach(SHADER ${VERTEX_SHADERS})
+    compile_shader("vertex" ${SHADER} ${SHADER_OUTPUT_DIR} ${SHADER_RENDERER} ${SHADER_PROFILE})
+endforeach()
+foreach(SHADER ${FRAGMENT_SHADERS})
+    compile_shader("fragment" ${SHADER} ${SHADER_OUTPUT_DIR} ${SHADER_RENDERER} ${SHADER_PROFILE})
+endforeach()
+
+# Создаём цель shaders и делаем её зависимостью M3
+add_custom_target(shaders ALL DEPENDS ${COMPILED_SHADERS})
+add_dependencies(M3 shaders)
+
+# Важно: добавить выходную директорию в include, чтобы можно было загружать .bin
+target_include_directories(M3 PRIVATE ${SHADER_OUTPUT_DIR})
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
@@ -141,6 +221,8 @@ install(TARGETS M3
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(M3)

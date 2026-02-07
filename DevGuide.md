@@ -1,33 +1,25 @@
 # Основы
 
-    todo: Картинки
+В этом файле описаны ключевые требования и инструкции по сборке и пониманию функционирования приложения.
+
+## Структура проекта
+
+<span style="color:red; font-weight:bold; font-size: 30px"> Обязательно! </span>
+
+proj_dir
+* M3 - основное приложение
+* bgfx - основная зависимость в рендере
+    * bgfx
+    * bgfx.cmake
+    * bx
+    * bimg
+
+Дополнительно в папку proj_dir можно добавлять плагины, так как они имеют одинаковые с главным приложением зависимости
+bgfx предварительно надо собрать с отключенным SPIRV (по неизвестной причине в библиотеке есть единственная ошибка связанная с этим).
+### Ссылки на зависимости
+
+* bgfx - https://github.com/bkaradzic/bgfx
+
+```todo: Картинки```
 ## Сообщения
-Стрелочка к названию - модуль реагирует на это сообщение.
-Стрелочка от названия - модуль отправляет это сообщение.
-### Зарезервированные
-* initialize
-### Используемые модулями 
-#### Общие
-* set_data
-* init_started
-* error
-#### App Core
-* cache_ok ←
-* askToReady →
-* cache_err ←
-* initialize →
-#### Data Manager
-* set_data → 
-* ask_cache →
-* save ←
-* new ←
-* dm_ready →
-* cache_err →
-* cache_ok →
-* engine_resolving_respond →
-#### Engine Manager
-* engine_resolving_respond ←
-* engine_resolving_request →
 
-
-TODO: обновить
