@@ -87,6 +87,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         cube.vs.sc
         cube.fs.sc
         varying.def.sc
+        trackermanager.h trackermanager.cpp
+        devices.h devices.cpp
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET M3 APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -110,13 +112,26 @@ else()
     qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 endif()
 
+# if(MINGW)
+#     set(CMAKE_EXE_LINKER_FLAGS "-static")
+# endif()
 
+add_library(miniaudio INTERFACE)
+target_include_directories(miniaudio INTERFACE ${CMAKE_SOURCE_DIR}/../miniaudio-0.11.24)
+
+find_package(PkgConfig REQUIRED)
+
+find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui)
+pkg_check_modules(HIDAPI REQUIRED IMPORTED_TARGET hidapi)
+pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
+pkg_check_modules(SERIALPORT REQUIRED libserialport)
 
 target_include_directories(M3 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-d") # Буква d означает debug-сборку библиотеки
 target_include_directories(M3 PRIVATE ${BGFX_ROOT}/include)
 target_link_directories(M3 PRIVATE ${BGFX_ROOT}/lib)
 add_compile_definitions(BX_CONFIG_DEBUG=1)
+message(${OpenCV_LIBS})
 target_link_libraries(
     M3 PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Quick
@@ -127,7 +142,16 @@ target_link_libraries(
     bgfx
     bx
     bimg
+    miniaudio
+    serialport
+    PkgConfig::HIDAPI
+    PkgConfig::LIBUSB
+    ${OpenCV_LIBS}
 )
+
+if(WIN32)
+    target_link_libraries(M3 PRIVATE winmm setupapi)
+endif()
 
 # set(BX_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bx")
 # set(BIMG_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bimg")
@@ -177,7 +201,6 @@ function(compile_shader TYPE INPUT OUTPUT_DIR RENDERER PROFILE)
         VERBATIM
     )
 
-    # Добавляем в родительский список
     set(COMPILED_SHADERS ${COMPILED_SHADERS} ${OUTPUT_BIN} PARENT_SCOPE)
 endfunction()
 
@@ -186,7 +209,6 @@ message(STATUS "FRAGMENT_SHADERS = ${FRAGMENT_SHADERS}")
 message(STATUS "SHADER_OUTPUT_DIR = ${SHADER_OUTPUT_DIR}")
 message(STATUS "SHADER_RENDERER = ${SHADER_RENDERER}")
 
-# Компилируем
 foreach(SHADER ${VERTEX_SHADERS})
     compile_shader("vertex" ${SHADER} ${SHADER_OUTPUT_DIR} ${SHADER_RENDERER} ${SHADER_PROFILE})
 endforeach()
@@ -194,11 +216,9 @@ foreach(SHADER ${FRAGMENT_SHADERS})
     compile_shader("fragment" ${SHADER} ${SHADER_OUTPUT_DIR} ${SHADER_RENDERER} ${SHADER_PROFILE})
 endforeach()
 
-# Создаём цель shaders и делаем её зависимостью M3
 add_custom_target(shaders ALL DEPENDS ${COMPILED_SHADERS})
 add_dependencies(M3 shaders)
 
-# Важно: добавить выходную директорию в include, чтобы можно было загружать .bin
 target_include_directories(M3 PRIVATE ${SHADER_OUTPUT_DIR})
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

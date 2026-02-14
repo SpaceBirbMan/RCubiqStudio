@@ -173,10 +173,6 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
 QWidget* UiRenderer::renderTree(UiTreeView* tree) {
     QWidget* tr = new QWidget;
 
-
-    for (auto& ch : tree->children ) {
-
-    }
 }
 
 QWidget* UiRenderer::renderImageBox(UiImageBox* imgBox) {
@@ -227,7 +223,7 @@ QWidget* UiRenderer::renderContainer(UiContainer* container) { // тут име�
     w->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     w->setLayout(lay);
 
-    for (auto& ch : container->children) {
+    for (auto& ch : container->getChildren()) {
         QWidget* child = renderElement(ch.get());
         lay->addWidget(child);
     }
@@ -241,7 +237,7 @@ QWidget* UiRenderer::renderGroup(UiGroup* group) {
     auto lay = makeLayout(group->sort);
     w->setLayout(lay);
 
-    for (auto& ch : group->children)
+    for (auto& ch : group->getChildren())
         lay->addWidget(renderElement(ch.get()));
 
     return w;

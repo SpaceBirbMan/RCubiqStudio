@@ -1,30 +1,77 @@
 #ifndef DEVICEMANAGER_H
 #define DEVICEMANAGER_H
 
-class DeviceManager
-{
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <string>
+#include <unordered_map>
+#include "devices.h"
 
+template<typename T>
+class DataBus {
 private:
-
-    // шина видеокадров
-    // шина звука
-    // шина комманд от устройств ввода
-    // шина управления
-
-
-    // По устройству
-        // открытие
-        // закрытие
-        // привязка к шине данных
-        // отвязка от шины данных
-        // подписка на событие/чтение
-        // отправка данных на устройство (где возможно)
-        // тест
-        // настройка
-        // доступ к данным устройства (struct)
+    mutable std::mutex mtx;
+    std::queue<T> data;
 
 public:
+    void push(const T& item) {
+        std::lock_guard<std::mutex> lock(mtx);
+        data.push(item);
+    }
+
+    bool try_pop(T& out) {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (data.empty()) return false;
+        out = std::move(data.front());
+        data.pop();
+        return true;
+    }
+
+    size_t size() const {
+        std::lock_guard<std::mutex> lock(mtx);
+        return data.size();
+    }
+};
+
+class DeviceManager {
+public:
+    using DevicePtr = std::unique_ptr<Device>;
+    using DataCallback = std::function<void(const std::vector<uint8_t>&)>;
+
     DeviceManager();
+    ~DeviceManager();
+
+    // Регистрация устройства (передача владения)
+    bool registerDevice(DevicePtr dev);
+
+    // Управление состоянием устройства
+    bool openDevice(const std::string& id);
+    void closeDevice(const std::string& id);
+
+    // Привязка к шине данных (устройство будет пушить данные в шину)
+    bool bindToDeviceDataBus(const std::string& id, DataBus<std::vector<uint8_t>>* bus);
+
+    // Привязка к коллбэку (устройство будет вызывать функцию)
+    bool bindToDeviceDataCallback(const std::string& id, DataCallback callback);
+
+    // Отвязка (удаляет любую привязку: шину или коллбэк)
+    void unbindDeviceData(const std::string& id);
+
+    // Отправка данных в устройство (если поддерживается)
+    bool sendDataToDevice(const std::string& id, const std::vector<uint8_t>& data);
+
+    // Получение указателя на устройство (для интроспекции или специфичных действий)
+    const Device* getDevice(const std::string& id) const;
+
+private:
+    mutable std::mutex mtx_;
+    std::unordered_map<std::string, DevicePtr> devices_;
+
+    // Только один тип привязки на устройство
+    std::unordered_map<std::string, DataBus<std::vector<uint8_t>>*> deviceDataBuses_;
+    std::unordered_map<std::string, DataCallback> deviceCallbacks_;
 };
 
 #endif // DEVICEMANAGER_H

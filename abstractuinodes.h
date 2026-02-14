@@ -65,16 +65,47 @@ public:
 //////////////////////////////////////////////////////////
 
 class UiContainer : public UiElement {
-public:
+private:
+
     std::vector<std::shared_ptr<UiElement>> children;
 
-    template<typename T, typename... Args>
-    T* add(Args&&... args) {
-        auto ptr = std::make_shared<T>(std::forward<Args>(args)...);
-        T* raw = ptr.get();
-        children.push_back(std::move(ptr));
-        return raw;
+public:
+
+    UiContainer() = default;
+
+    UiContainer(UiElement el) {
+        add(el);
     }
+
+    UiContainer(std::vector<UiElement> elements) {
+        add(elements);
+    }
+
+    void add(UiElement el) {
+        auto ptr = std::make_shared<UiElement>(el);
+        children.push_back(std::move(ptr));
+    }
+
+    void add(std::vector<UiElement> elements) {
+        for (UiElement el : elements) {
+            auto ptr = std::make_shared<UiElement>(el);
+            children.push_back(std::move(ptr));
+        }
+    }
+
+    std::vector<std::shared_ptr<UiElement>> getChildren() {
+        return this->children;
+    }
+
+    // template<typename T>
+    // void remove(UiElement el) {
+    //     for (T el : elements) {
+    //         auto ptr = std::make_shared<UiElement>(el);
+    //         children.erase(ptr);
+    //         delete ptr;
+    //     }
+    // }
+
 };
 
 class UiGroup : public UiContainer {
@@ -128,15 +159,13 @@ public:
 
 class UiImageBox : public UiElement {
 public:
-    std::string imagePath; // путь к изображению или URI
+    std::string imagePath;
     bool hasImage = false;
 
-    // Опциональные коллбэки
-    std::function<void(const std::string&)> onImageSet;   // вызывается при установке изображения
-    std::function<void()> onImageCleared;                 // при очистке
-    std::function<void()> onRequestImage;                 // триггер для открытия диалога/DnD
+    std::function<void(const std::string&)> onImageSet;
+    std::function<void()> onImageCleared;
+    std::function<void()> onRequestImage;
 
-    // Методы для внешнего управления (опционально)
     void setImage(const std::string& path) {
         imagePath = path;
         hasImage = !path.empty();

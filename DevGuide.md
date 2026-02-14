@@ -19,7 +19,12 @@ bgfx предварительно надо собрать с отключенн�
 ### Ссылки на зависимости
 
 * bgfx - https://github.com/bkaradzic/bgfx
+* pacman -S mingw-w64-x86_64-opencv mingw-w64-x86_64-hidapi mingw-w64-x86_64-libusb
+* libserial
+* miniaudio
 
 ```todo: Картинки```
+
+```todo: Docker```
 ## Сообщения
 

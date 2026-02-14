@@ -71,7 +71,7 @@
              <x>0</x>
              <y>0</y>
              <width>233</width>
-             <height>384</height>
+             <height>312</height>
             </rect>
            </property>
            <layout class="QHBoxLayout" name="horizontalLayout_2">
@@ -96,6 +96,23 @@
            </layout>
           </widget>
          </widget>
+        </item>
+        <item>
+         <widget class="Line" name="line_2">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_3">
+          <property name="text">
+           <string>Трекер</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="trackerBox"/>
         </item>
        </layout>
       </widget>
@@ -151,6 +168,7 @@
     </property>
     <addaction name="action_Render_API"/>
     <addaction name="includeEngineMenuButton"/>
+    <addaction name="action"/>
    </widget>
    <addaction name="menu"/>
    <addaction name="menu_2"/>
@@ -187,6 +205,11 @@
   <action name="action_Render_API">
    <property name="text">
     <string>Добавить Render API...</string>
+   </property>
+  </action>
+  <action name="action">
+   <property name="text">
+    <string>Подключить трекер</string>
    </property>
   </action>
  </widget>
