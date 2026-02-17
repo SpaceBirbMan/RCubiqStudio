@@ -2,6 +2,7 @@
 #define APPMESSAGE_H
 
 #include <any>
+#include <string>
 
 using messageType = std::string;
 using senderType = std::string;

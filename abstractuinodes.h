@@ -6,6 +6,7 @@
 #include <memory>
 #include <functional>
 
+namespace RUI {
 enum GroupSortType {
     VBox,
     HBox,
@@ -70,42 +71,28 @@ private:
     std::vector<std::shared_ptr<UiElement>> children;
 
 public:
-
     UiContainer() = default;
 
-    UiContainer(UiElement el) {
-        add(el);
+    void add(std::shared_ptr<UiElement> el) {
+        children.push_back(std::move(el));
     }
 
-    UiContainer(std::vector<UiElement> elements) {
-        add(elements);
+    template<typename T, typename... Args>
+    std::shared_ptr<T> add(Args&&... args) {
+        auto ptr = std::make_shared<T>(std::forward<Args>(args)...);
+        add(ptr);
+        return ptr;
     }
 
-    void add(UiElement el) {
-        auto ptr = std::make_shared<UiElement>(el);
-        children.push_back(std::move(ptr));
-    }
-
-    void add(std::vector<UiElement> elements) {
-        for (UiElement el : elements) {
-            auto ptr = std::make_shared<UiElement>(el);
-            children.push_back(std::move(ptr));
+    void add(const std::vector<std::shared_ptr<UiElement>>& elements) {
+        for (const auto& el : elements) {
+            children.push_back(el);
         }
     }
 
-    std::vector<std::shared_ptr<UiElement>> getChildren() {
+    const std::vector<std::shared_ptr<UiElement>>& getChildren() const {
         return this->children;
     }
-
-    // template<typename T>
-    // void remove(UiElement el) {
-    //     for (T el : elements) {
-    //         auto ptr = std::make_shared<UiElement>(el);
-    //         children.erase(ptr);
-    //         delete ptr;
-    //     }
-    // }
-
 };
 
 class UiGroup : public UiContainer {
@@ -242,7 +229,7 @@ class UiInputField : public UiElement {
 public:
     std::string hint;
     std::string value;
-    TextType inputType = STRING;
+    RUI::TextType inputType = STRING;
 
     std::function<void(const std::string&)> onTextChanged;
 };
@@ -264,5 +251,7 @@ public:
 
 // todo: Мб стоит подумать о вариантах передаваемых функций, как это сделано в
 //       блоке маршрутизации сообщений
+
+} // ns:RUI
 
 #endif // ABSTRACTUINODES_H

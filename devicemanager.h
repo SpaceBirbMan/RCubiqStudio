@@ -1,6 +1,7 @@
 #ifndef DEVICEMANAGER_H
 #define DEVICEMANAGER_H
 
+#include "appcore.h"
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -8,6 +9,7 @@
 #include <string>
 #include <unordered_map>
 #include "devices.h"
+
 
 template<typename T>
 class DataBus {
@@ -41,12 +43,16 @@ public:
     using DataCallback = std::function<void(const std::vector<uint8_t>&)>;
 
     DeviceManager();
+    DeviceManager(AppCore* core);
     ~DeviceManager();
 
-    // Регистрация устройства (передача владения)
+    void initialize();
+
+    std::vector<CameraInfo> enumerateCameras(int maxIndex = 10);
+    std::vector<AudioDeviceInfo> getCaptureDevices();
+
     bool registerDevice(DevicePtr dev);
 
-    // Управление состоянием устройства
     bool openDevice(const std::string& id);
     void closeDevice(const std::string& id);
 
@@ -65,7 +71,14 @@ public:
     // Получение указателя на устройство (для интроспекции или специфичных действий)
     const Device* getDevice(const std::string& id) const;
 
+
+
 private:
+
+    AppCore* acptr;
+
+    std::string name = "DeviceManager";
+
     mutable std::mutex mtx_;
     std::unordered_map<std::string, DevicePtr> devices_;
 

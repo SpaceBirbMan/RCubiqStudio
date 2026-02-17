@@ -5,11 +5,10 @@
 AppCore::AppCore() : eventManager() {
     eQueuePointer = &(this->eventManager.getQueue());
 
-    eventManager.subscribe(name, "cache_ok", AppCore::startInitialization, this);
-    eventManager.subscribe(name, "askToPreInit", AppCore::askToPreInit, this);
-    eventManager.subscribe(name, "cache_err", AppCore::discardStartUp, this);
-    eventManager.subscribe(name, "module_subscribed", AppCore::addToReady, this);
-
+    eventManager.subscribe(name, "cache_ok", &AppCore::startInitialization, this);
+    eventManager.subscribe(name, "askToPreInit", &AppCore::askToPreInit, this);
+    eventManager.subscribe(name, "cache_err", &AppCore::discardStartUp, this);
+    eventManager.subscribe(name, "module_subscribed", &AppCore::addToReady, this);
 }
 
 void AppCore::startInitialization() {

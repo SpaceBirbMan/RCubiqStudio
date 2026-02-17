@@ -6,6 +6,8 @@
 //QQuickView* view = new QQuickView(); // через эту тему лучше пойдёт рендер
 // надо размещать отдельно, должно пойти с любым rend-back
 
+using namespace RUI;
+
 MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозрение, что интерфейс нужно поднимать через ленивую инициализацию, чтобы запуск был быстрый
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)

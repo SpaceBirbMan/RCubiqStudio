@@ -6,14 +6,12 @@ void MessageProcessor::process() {
     std::unique_lock<std::mutex> lock(mut);
 
     while (!stopFlag) {
-        // ждём сигнал либо новые данные
         cv.wait(lock, [&]() {
             return stopFlag || !qPtr.is_empty();
         });
 
         if (stopFlag) break;
 
-        // обрабатываем все сообщения, пока они есть
         while (!qPtr.is_empty()) {
             auto msg = qPtr.pollMessage();
             std::cout << "[SENDER] " + msg.getSender() + " [MESSAGE] " + msg.getMessage() << std::endl;

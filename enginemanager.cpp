@@ -96,8 +96,8 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
 
     engine->test();
     try {
-        shared_ptr<std::vector<UiPage>> rp2 = engine->getUiPages();
-        vector<UiPage> rp = *rp2;
+        shared_ptr<std::vector<RUI::UiPage>> rp2 = engine->getUiPages();
+        vector<RUI::UiPage> rp = *rp2;
 
         std::cout << rp.size() << std::endl;
 

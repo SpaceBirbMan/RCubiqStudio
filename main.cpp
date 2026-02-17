@@ -3,6 +3,7 @@
 #include "enginemanager.h"
 #include "testEng/core.h"
 #include "rendermanager.h"
+#include "devicemanager.h"
 
 #include <QApplication>
 #include <QLocale>
@@ -47,6 +48,7 @@ int main(int argc, char *argv[])
     EngineManager *egm = new EngineManager(core);
     MainWindow mainWindow(nullptr, core);
     RenderManager *renm = new RenderManager(core);
+    DeviceManager *dvm = new DeviceManager(core);
 
     //core->registerModule(dtm->name);
     core->registerModule(egm->name);

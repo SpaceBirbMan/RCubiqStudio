@@ -23,6 +23,13 @@ bgfx предварительно надо собрать с отключенн�
 * libserial
 * miniaudio
 
+### Может понадобиться 
+
+* mingw-w64-x86_64-libbluray
+* mingw-w64-x86_64-imath
+* mingw-w64-x86_64-ffmpeg
+* mingw-w64-x86_64-openexr
+
 ```todo: Картинки```
 
 ```todo: Docker```

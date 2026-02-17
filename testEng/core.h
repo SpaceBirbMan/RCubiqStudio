@@ -37,7 +37,7 @@ private:
 
         std::string cacheKey() const override { return name; }
 
-    std::shared_ptr<UiPage> rootPage;
+    std::shared_ptr<RUI::UiPage> rootPage;
 
     nlohmann::json serializeCache() const override {
         nlohmann::json j = {

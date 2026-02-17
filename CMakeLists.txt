@@ -18,6 +18,7 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Quick QuickWidget
 find_package(PkgConfig REQUIRED)
 
 set(TS_FILES M3_ru_RU.ts)
+set(QT_CREATOR_SKIP_MAINTENANCE_TOOL_PROVIDER ON)
 
 set(PROJECT_SOURCES
         main.cpp
@@ -89,6 +90,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         varying.def.sc
         trackermanager.h trackermanager.cpp
         devices.h devices.cpp
+
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET M3 APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -128,6 +130,7 @@ pkg_check_modules(SERIALPORT REQUIRED libserialport)
 
 target_include_directories(M3 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-d") # Буква d означает debug-сборку библиотеки
+set(BIN_DIRS "${BGFX_ROOT}/bin")
 target_include_directories(M3 PRIVATE ${BGFX_ROOT}/include)
 target_link_directories(M3 PRIVATE ${BGFX_ROOT}/lib)
 add_compile_definitions(BX_CONFIG_DEBUG=1)
@@ -164,11 +167,9 @@ file(GLOB FRAGMENT_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.fs.sc")
 message(STATUS "Vertex shaders: ${VERTEX_SHADERS}")
 message(STATUS "Fragment shaders: ${FRAGMENT_SHADERS}")
 
-# --- Shader compilation ---
 set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
 
-# Список скомпилированных бинарников
 set(COMPILED_SHADERS "")
 
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -190,7 +191,7 @@ function(compile_shader TYPE INPUT OUTPUT_DIR RENDERER PROFILE)
     set(OUTPUT_BIN "${OUTPUT_DIR}/${FILE_NAME}_${TYPE}.bin")
     add_custom_command(
         OUTPUT ${OUTPUT_BIN}
-        COMMAND ${SHADERC_EXECUTABLE}
+        COMMAND "${BIN_DIRS}/shaderc"
             -f ${INPUT}
             -o ${OUTPUT_BIN}
             --type ${TYPE}
@@ -202,6 +203,50 @@ function(compile_shader TYPE INPUT OUTPUT_DIR RENDERER PROFILE)
     )
 
     set(COMPILED_SHADERS ${COMPILED_SHADERS} ${OUTPUT_BIN} PARENT_SCOPE)
+endfunction()
+
+function(copy_opencv_dependencies target_name output_path)
+    get_target_property(LINK_LIBS ${target_name} LINK_LIBRARIES)
+    if(NOT LINK_LIBS)
+        return()
+    endif()
+
+    # Используем рекурсивный обход всех связанных библиотек
+    list(APPEND libs_to_check ${LINK_LIBS})
+    set(processed_libs "")
+
+    while(libs_to_check)
+        list(POP_FRONT libs_to_check lib)
+
+        # Пропускаем уже обработанные и служебные записи
+        if(lib IN_LIST processed_libs OR lib MATCHES "^\\$" OR lib MATCHES "debug|optimized|general")
+            continue()
+        endif()
+        list(APPEND processed_libs lib)
+
+        if(TARGET ${lib})
+            # Получаем расположение библиотеки
+            get_target_property(lib_location ${lib} LOCATION)
+
+            # Если это DLL, копируем её
+            if(lib_location AND lib_location MATCHES "\\.dll$")
+                file(COPY ${lib_location} DESTINATION ${output_path})
+                message(STATUS "Copied DLL: ${lib_location}")
+            endif()
+
+            # Добавляем зависимости этой библиотеки в очередь проверки
+            get_target_property(lib_deps ${lib} INTERFACE_LINK_LIBRARIES)
+            if(lib_deps)
+                list(APPEND libs_to_check ${lib_deps})
+            endif()
+
+            # Для импортированных целей иногда зависимости лежат в LINK_LIBRARIES
+            get_target_property(lib_direct_deps ${lib} LINK_LIBRARIES)
+            if(lib_direct_deps)
+                list(APPEND libs_to_check ${lib_direct_deps})
+            endif()
+        endif()
+    endwhile()
 endfunction()
 
 message(STATUS "VERTEX_SHADERS = ${VERTEX_SHADERS}")
@@ -243,6 +288,15 @@ install(TARGETS M3
 )
 
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/Debug")
+else()
+    set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/Release")
+endif()
+
+file(MAKE_DIRECTORY ${OUTPUT_DIR})
+
+copy_opencv_dependencies(M3 ${OUTPUT_DIR})
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(M3)

@@ -6,8 +6,6 @@
 #include "misc.h"
 #include "consts.h"
 
-
-
 class CacheManager
 {
 public:

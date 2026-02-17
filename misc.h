@@ -51,7 +51,7 @@ public:
         void* subscriber
         ) = 0;
     virtual void test() = 0;
-    virtual std::shared_ptr<std::vector<UiPage>> getUiPages() = 0;
+    virtual std::shared_ptr<std::vector<RUI::UiPage>> getUiPages() = 0;
 };
 
 class IRenderer {

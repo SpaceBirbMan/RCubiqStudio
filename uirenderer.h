@@ -21,6 +21,8 @@
 
 #include "AbstractUiNodes.h"
 
+using namespace RUI;
+
 class UiRenderer {
 public:
     static QWidget* renderElement(UiElement* elem);
