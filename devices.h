@@ -11,27 +11,11 @@
 
 #include <string>
 #include <mutex>
-#include <stdexcept>
-#include <iostream>
 #include <memory>
 #include <functional>
 #include <vector>
 #include <thread>
 #include <atomic>
-
-struct CameraInfo {
-    int index;
-    std::string name;
-    int width;
-    int height;
-    double maxFps;
-};
-
-struct AudioDeviceInfo {
-    ma_device_id id;
-    std::string name;
-    ma_device_type type;
-};
 
 class MiniAudioContext;
 

@@ -79,4 +79,18 @@ struct CacheObject {
     std::string name;
 };
 
+struct CameraInfo {
+    int index;
+    std::string name;
+    int width;
+    int height;
+    double maxFps;
+};
+
+struct AudioDeviceInfo {
+    std::string id;
+    std::string name;
+    std::string type;
+};
+
 #endif // MISC_H

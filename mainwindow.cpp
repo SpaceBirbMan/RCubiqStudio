@@ -2,6 +2,9 @@
 #include "./ui_mainwindow.h"
 #include <QQuickView>
 #include "viewportwidget.h"
+#include "devices.h"
+#include "uirenderer.h"
+
 
 //QQuickView* view = new QQuickView(); // через эту тему лучше пойдёт рендер
 // надо размещать отдельно, должно пойти с любым rend-back
@@ -23,6 +26,10 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
     core->getEventManager().subscribe("cache_err", &MainWindow::showCacheErrorMessage, this);
     core->getEventManager().subscribe("send_control_table", &MainWindow::setControlsTable, this);
     core->getEventManager().subscribe("init_ui_eng", &MainWindow::initDynamicUi, this);
+    core->getEventManager().subscribe("initialize", &MainWindow::initialize, this);
+    core->getEventManager().subscribe(name, "get_video_devices_respond", &MainWindow::setVideoDevices, this);
+    core->getEventManager().subscribe(name, "active_camera_info", &MainWindow::setActiveCamera, this);
+    core->getEventManager().subscribe(name, "active_camera_device", &MainWindow::startCamera, this);
     //core->getEventManager().subscribe("send_frame_queue", &MainWindow::connectFramesToViewport, this);
     core->getEventManager().subscribe("update_engines_combo", &MainWindow::updateEnginesCombo, this);
     // TODO: мб стоит делать отдельный класс для подписки на сообщения
@@ -32,11 +39,93 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
     connect(ui->enginesComboBox, &QComboBox::currentTextChanged,
             this, &MainWindow::switchActiveEngine);
     connect(ui->action_Render_API, &QAction::triggered, this, &MainWindow::setRenderApi);
+    connect(ui->videoDeviceComboBox, &QComboBox::currentTextChanged, this, &MainWindow::cameraChanged);
+
+    QVBoxLayout *layout = new QVBoxLayout(ui->frameForFace);
+    layout->setContentsMargins(0, 0, 0, 0);
+    cameraLabel = new QLabel(ui->frameForFace);
+    cameraLabel->setAlignment(Qt::AlignCenter);
+    cameraLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    layout->addWidget(cameraLabel);
+    cameraLabel->show();
+
 }
 
 MainWindow::~MainWindow()
 {
+    if (currentCamera) {
+        currentCamera->close();
+    }
     delete ui;
+}
+
+void MainWindow::initialize() {
+    core->getEventManager().sendMessage(AppMessage(name, "get_video_devices_request", 0));
+}
+
+void MainWindow::setVideoDevices(std::vector<CameraInfo> cameras) {
+    for (CameraInfo camera : cameras) {
+        std::cout << "[1-1]"<< camera.name << std::endl;
+        ui->videoDeviceComboBox->addItem(QString::fromStdString(camera.name));
+    }
+}
+
+void MainWindow::cameraChanged() {
+    this->core->getEventManager().sendMessage(AppMessage(name, "activate_camera", ui->videoDeviceComboBox->currentText().toStdString()));
+}
+
+void MainWindow::setActiveCamera(CameraInfo camera) {
+    ui->maxFpsLabel->setText(QString::fromStdString(std::to_string(camera.maxFps)));
+}
+
+// TODO: с девайса перейти на шину из менеджера
+void MainWindow::startCamera(std::shared_ptr<Device> camera) {
+    if (!camera) return;
+
+    // 1. Останавливаем и сбрасываем старую камеру
+    if (currentCamera) {
+        currentCamera->close();
+        // Сбрасываем коллбэк, чтобы старые данные не пришли позже
+        currentCamera->setDataCallback(nullptr);
+        currentCamera.reset();
+    }
+
+    currentCamera = camera;
+
+    // 2. Устанавливаем новый коллбэк
+    camera->setDataCallback([this](const std::vector<uint8_t>& data) {
+        QByteArray ba(reinterpret_cast<const char*>(data.data()), static_cast<int>(data.size()));
+        // Используем QueuedConnection, чтобы декодирование не блокировало поток устройства
+        QMetaObject::invokeMethod(this, "onFrameReceived", Qt::QueuedConnection, Q_ARG(QByteArray, ba));
+    });
+
+    camera->open();
+    if (!camera->isOpen()) {
+        std::cerr << "Failed to open camera" << std::endl;
+        currentCamera.reset(); // Сброс при ошибке
+    }
+}
+
+void MainWindow::onFrameReceived(const QByteArray &jpegData) {
+    if (jpegData.isEmpty()) return;
+
+    std::vector<uchar> buf(jpegData.begin(), jpegData.end());
+    cv::Mat frame = cv::imdecode(buf, cv::IMREAD_COLOR);
+
+    if (frame.empty()) return;
+
+    cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
+
+    QImage img(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_RGB888);
+    QImage imageCopy = img.copy();
+
+    QPixmap pixmap = QPixmap::fromImage(imageCopy);
+
+    cameraLabel->setPixmap(pixmap);
+
+    cameraLabel->setScaledContents(true);
+
+    cameraLabel->setAlignment(Qt::AlignCenter);
 }
 
 void MainWindow::showCacheErrorMessage() {
@@ -55,10 +144,10 @@ void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> t
 
 }
 
-void MainWindow::initDynamicUi(shared_ptr<std::vector<UiPage>> pages) {
+void MainWindow::initDynamicUi(shared_ptr<std::vector<RUI::UiPage>> pages) {
     QMetaObject::invokeMethod(this, [this, pages]() { // это нужно из-за того, что рендер может вызываться не из ui-потока qt
         for (UiPage root : *pages) {
-            UiRenderer::renderToTabWidget(std::make_shared<UiPage>(root), ui->leftPanel);
+            UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(root), ui->leftPanel);
         }
     }, Qt::QueuedConnection);
 }

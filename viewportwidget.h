@@ -69,7 +69,6 @@ public:
         init.type = bgfx::RendererType::OpenGL;
         init.platformData.nwh = reinterpret_cast<void*>(winId());
 
-        // Получаем реальные размеры с учетом DPI
         QSize size = this->size();
         qreal dpr = devicePixelRatioF();
         init.resolution.width = uint32_t(size.width() * dpr);
@@ -78,6 +77,7 @@ public:
 
         if (!bgfx::init(init)) {
             qFatal("Failed to initialize bgfx");
+            return;
         }
 
         // Явно устанавливаем область отображения на весь виджет
