@@ -85,7 +85,24 @@
              </widget>
             </item>
             <item>
-             <widget class="QComboBox" name="enginesComboBox"/>
+             <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="5,1">
+              <item>
+               <widget class="QComboBox" name="enginesComboBox"/>
+              </item>
+              <item>
+               <widget class="QPushButton" name="addEngineButton">
+                <property name="minimumSize">
+                 <size>
+                  <width>30</width>
+                  <height>0</height>
+                 </size>
+                </property>
+                <property name="text">
+                 <string>+</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
             </item>
             <item>
              <widget class="Line" name="line">
@@ -104,14 +121,34 @@
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>198</width>
-                 <height>339</height>
+                 <width>193</width>
+                 <height>341</height>
                 </rect>
                </property>
                <attribute name="label">
                 <string>Трекер</string>
                </attribute>
                <layout class="QVBoxLayout" name="verticalLayout_3">
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout" stretch="50,1">
+                  <item>
+                   <widget class="QComboBox" name="trackerComboBox"/>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="addTrackerButton">
+                    <property name="minimumSize">
+                     <size>
+                      <width>30</width>
+                      <height>0</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>+</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
                 <item>
                  <widget class="QFrame" name="frameForFace">
                   <property name="sizePolicy">
@@ -218,7 +255,7 @@
                  <x>0</x>
                  <y>0</y>
                  <width>198</width>
-                 <height>339</height>
+                 <height>336</height>
                 </rect>
                </property>
                <attribute name="label">

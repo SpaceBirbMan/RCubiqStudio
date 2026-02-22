@@ -152,6 +152,8 @@ target_link_libraries(
     ${OpenCV_LIBS}
 )
 
+target_link_libraries(M3 PRIVATE ws2_32)
+
 if(WIN32)
     target_link_libraries(M3 PRIVATE winmm setupapi)
 endif()

@@ -15,6 +15,7 @@ DataManager::DataManager(AppCore* acptr) {
     acptr->getEventManager().subscribe(name, "new", &DataManager::dummy2, this);
     acptr->getEventManager().subscribe(name, "save_cache", &CacheManager::pickCache, &this->cacheManager);
     acptr->getEventManager().subscribe(name, "resolve_render_api_request", &DataManager::resolveApi, this);
+    acptr->getEventManager().subscribe(name, "tracking_resolving_request", &DataManager::resolveTracker, this);
 
 }
 
@@ -38,6 +39,26 @@ void DataManager::tryToLoadCache() {
     } catch (...) {
         std::cerr << "Cache loading error" << std::endl;
     }
+}
+
+void DataManager::resolveTracker(Meta meta) {
+    std::cout << "Started resolving" << std::endl;
+    // TODO: а если два движка откроется?
+    auto it = libsPool.find(meta.path);
+    if (it == libsPool.end()) {
+        auto lib = std::make_shared<DynamicLibrary>(meta.path);
+        auto result = libsPool.emplace(meta.path, lib);
+        it = result.first;
+    }
+
+    std::vector<void*> ptrs;
+    for (int i = 0; i < meta.func_names.size(); i++) {
+        ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+    }
+
+    appCorePtr->getEventManager().sendMessage(
+        AppMessage(name, "tracker_resolving_respond", ptrs)
+        );
 }
 
 void DataManager::resolveFuncTable(LibMeta meta) {

@@ -46,6 +46,7 @@ private:
 
     void saveFiles(std::any data);
     void resolveApi(LibMeta meta);
+    void resolveTracker(Meta meta);
 
 };
 

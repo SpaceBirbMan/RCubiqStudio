@@ -15,7 +15,7 @@ payload FileLoader::loadBin(std::string path) {
         file.read(reinterpret_cast<char*>(data.data()), size);
         return data;
     } catch (...) {
-        // todo: catch
+        // TODO: catch
     }
 
 }

@@ -4,6 +4,7 @@
 #include "testEng/core.h"
 #include "rendermanager.h"
 #include "devicemanager.h"
+#include "trackermanager.h"
 
 #include <QApplication>
 #include <QLocale>
@@ -29,18 +30,18 @@ int main(int argc, char *argv[])
 
     QApplication a(argc, argv);
 
-    QPixmap pixmap(":/splash.png");
-    QSplashScreen splash(pixmap);
-    splash.show();
-    a.processEvents(); // показать немедленно
+    // QPixmap pixmap(":/splash.png");
+    // QSplashScreen splash(pixmap);
+    // splash.show();
+    // a.processEvents();
 
-    // имитация загрузки модулей
-    for (int i = 0; i <= 100; i += 25) {
-        splash.showMessage(QString("Загрузка... %1%").arg(i),
-                           Qt::AlignBottom | Qt::AlignCenter, Qt::white);
-        QThread::msleep(300);
-        a.processEvents();
-    }
+    // // имитация загрузки модулей
+    // for (int i = 0; i <= 100; i += 25) {
+    //     splash.showMessage(QString("Загрузка... %1%").arg(i),
+    //                        Qt::AlignBottom | Qt::AlignCenter, Qt::white);
+    //     QThread::msleep(300);
+    //     a.processEvents();
+    // }
 /////////////////////////////////////////////////
     AppCore *core = new AppCore;
 
@@ -49,10 +50,12 @@ int main(int argc, char *argv[])
     MainWindow mainWindow(nullptr, core);
     RenderManager *renm = new RenderManager(core);
     DeviceManager *dvm = new DeviceManager(core);
+    TrackerManager *tkm = new TrackerManager(core);
 
     //core->registerModule(dtm->name);
     core->registerModule(egm->name);
     core->registerModule(renm->cacheKey());
+    core->registerModule(tkm->cacheKey());
 
     core->getEventManager().sendMessage(AppMessage("main", "askToPreInit", 0)); // вместо нуля можно аргументы
 #ifndef QML
@@ -63,8 +66,10 @@ int main(int argc, char *argv[])
     // view.setResizeMode(QQuickView::SizeRootObjectToView);
     // view.show();
 #endif
+
+    //TODO: Миграция с децентрализованной системы сообщений в централизованную либо генератор карты маршрутизации + тестер маршрутов
 /////////////////////////////////////////////////
-    splash.finish(&mainWindow); // закрыть сплеш после показа окна
+    //splash.finish(&mainWindow); // закрыть сплеш после показа окна
     QTranslator translator;
     const QStringList uiLanguages = QLocale::system().uiLanguages();
     for (const QString &locale : uiLanguages) {

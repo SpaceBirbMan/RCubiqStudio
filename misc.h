@@ -6,10 +6,7 @@
 #include <any>
 #include <nlohmann/json.hpp>
 #include <deque>
-#include "dynamiclibrary.h"
 #include "AbstractUiNodes.h"
-#include "nlohmann/json.hpp"
-#include <optional>
 
 using json = nlohmann::json;
 using payload = std::vector<uint8_t>; //байт-буфер для payload
@@ -60,18 +57,7 @@ public:
     virtual void test() = 0;
 };
 
-using CreateEngine = IModel* (*)(void);
-using CreateRenderer = IRenderer* (*)(void);
 
-struct LibMeta {
-    std::string path;
-    std::vector<std::string> func_names;
-};
-
-struct EngineFuncs {
-    CreateEngine ce;
-    // ...
-};
 
 
 struct CacheObject {
@@ -85,6 +71,10 @@ struct CameraInfo {
     int width;
     int height;
     double maxFps;
+
+    std::string to_string() {
+        return std::to_string(index) + " " + name + " " + std::to_string(width) + "x" + std::to_string(height) + " "+  std::to_string(maxFps) + "\n";
+    }
 };
 
 struct AudioDeviceInfo {
@@ -92,5 +82,42 @@ struct AudioDeviceInfo {
     std::string name;
     std::string type;
 };
+
+struct TrackerInfo {
+
+};
+
+struct TrackingData {
+    // может хватить jsonа, так как неизвестно, что в данных будет + они всё равно в таблицу будут передваться
+};
+
+class ITracker {
+public:
+    virtual ~ITracker() = default;
+    virtual bool start() = 0;
+    virtual void stop() = 0;
+    virtual bool isRunning() const = 0;
+    virtual TrackingData getData() const = 0;
+};
+
+using CreateEngine = IModel* (*)(void);
+using CreateRenderer = IRenderer* (*)(void);
+using CreateTracker = ITracker* (*)(void);
+
+struct LibMeta {
+    std::string path;
+    std::vector<std::string> func_names;
+};
+
+struct Meta {
+    std::string path;
+    std::vector<std::string> func_names;
+};
+
+struct EngineFuncs {
+    CreateEngine ce;
+    // ...
+};
+
 
 #endif // MISC_H

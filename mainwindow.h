@@ -45,6 +45,9 @@ private:
     void setVideoDevices(std::vector<CameraInfo> cameras);
     void startCamera(std::shared_ptr<Device> camera);
     void setActiveCamera(CameraInfo camera);
+    void setActiveTracker(TrackerInfo info);
+    void trackerChanged(const QString& tracker);
+    void updateTrackersCombo(const std::set<std::string> &names);
 
     std::shared_ptr<renderQueue> frameQueue = nullptr;
 
@@ -55,5 +58,6 @@ private slots:
     void onSaveFileClicked();
     void cameraChanged();
     void onFrameReceived(const QByteArray &jpegData);
+    void addTrackers();
 };
 #endif // MAINWINDOW_H

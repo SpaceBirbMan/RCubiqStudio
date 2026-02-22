@@ -2,45 +2,48 @@
 #define TRACKERMANAGER_H
 
 #include <memory>
+#include <set>
+#include "appcore.h"
+#include "icacheable.h"
+#include "misc.h"
 
-struct TrackingData {
-    // может хватить jsonа, так как неизвестно, что в данных будет + они всё равно в таблицу будут передваться
-};
-
-class ITracker {
-public:
-    virtual ~ITracker() = default;
-    virtual bool start() = 0;
-    virtual void stop() = 0;
-    virtual bool isRunning() const = 0;
-    virtual TrackingData getData() const = 0;
-};
-
-class TrackerManager
+class TrackerManager : public ICacheable
 {
 private:
-    std::unique_ptr<ITracker> currentTracker;
+
+    std::shared_ptr<ITracker> currentTracker;
+
+    nlohmann::json serializeCache() const;
+    void deserializeCache(const nlohmann::json& data);
+
+    std::set<std::string>trackersRegistry {};
+
+    std::string name = "TrackerManager";
+
+    ITracker* tracker;
+
+    AppCore* core = nullptr;
 
 public:
-    TrackerManager();
+
+    TrackerManager() = default;
+    TrackerManager(AppCore* core);
     ~TrackerManager();
 
-    // Устанавливает активный трекер (например, OpenSeeFace, MediaPipe и т.д.)
-    void setTracker(std::unique_ptr<ITracker> tracker);
+    std::string cacheKey() const;
 
-    // Запускает/останавливает отслеживание
+    void setTracker(std::shared_ptr<ITracker> tracker);
+
     bool startTracking();
     void stopTracking();
 
-    // // Получает текущие данные позы/головы/лица (формат — обобщённый)
-    // struct TrackingData {
-    //     // Например: векторы поворота, трансляции, landmarks и т.п.
-    //     // Конкретная структура зависит от требований системы
-    // };
-    // TrackingData getCurrentData() const;
-
-    // Проверяет, запущен ли трекер
     bool isRunning() const;
+
+    void initialize();
+
+    void preInitialize();
+    void addNames(std::vector<std::string> names);
+    void activateTracker(std::vector<void*> pointers);
 };
 
 #endif

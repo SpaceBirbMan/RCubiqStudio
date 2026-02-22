@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include "devices.h"
 
+// TODO: Сделать обновление при переподключении
 template<typename T>
 class DataBus {
 private:
@@ -61,7 +62,6 @@ public:
     void unbindDeviceData(const std::string& id);
     bool sendDataToDevice(const std::string& id, const std::vector<uint8_t>& data);
 
-    // Возвращаем shared_ptr вместо сырого указателя для безопасности времени жизни объекта
     std::shared_ptr<Device> getDevice(const std::string& id) const;
 
 private:

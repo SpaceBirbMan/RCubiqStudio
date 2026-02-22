@@ -100,7 +100,7 @@ std::vector<CameraInfo> DeviceManager::enumerateCameras(int maxIndex) {
 
         CameraInfo info;
         info.index = i;
-        info.width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
+        info.width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH)); // TODO: нужна настройка по размерам вебки
         info.height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
         info.maxFps = cap.get(cv::CAP_PROP_FPS);
 
