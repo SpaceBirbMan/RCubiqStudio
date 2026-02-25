@@ -6,8 +6,8 @@
 //  helpers
 ///////////////////////////////////////////////////////////////
 
-static QBoxLayout* makeLayout(GroupSortType sort) {
-    return (sort == VBox)
+static QBoxLayout* makeLayout(CompositionType sort) {
+    return (sort == VBOX)
     ? static_cast<QBoxLayout*>(new QVBoxLayout)
     : static_cast<QBoxLayout*>(new QHBoxLayout);
 }
@@ -20,9 +20,6 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
 
     std::cout << "renderElement: " << typeid(*elem).name() << std::endl;
 
-    if (auto g = dynamic_cast<UiGroup*>(elem))
-        return renderGroup(g);
-
     if (auto pg = dynamic_cast<UiPage*>(elem))
         return renderPage(pg);
 
@@ -30,11 +27,11 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
         return renderContainer(c);
 
     if (auto t = dynamic_cast<UiTitle*>(elem)) {
-        QLabel* l = new QLabel(QString::fromStdString(t->text));
+        QLabel* l = new QLabel(QString::fromStdString(t->getText()));
         QFont f = l->font();
-        if (t->format == Italic) f.setItalic(true);
-        if (t->format == Bold) f.setBold(true);
-        if (t->format == Underline) f.setUnderline(true);
+        if (t->getFormat() == ITALIC) f.setItalic(true);
+        if (t->getFormat() == BOLD) f.setBold(true);
+        if (t->getFormat() == UNDERLINE) f.setUnderline(true);
         l->setFont(f);
         return l;
     }
@@ -111,8 +108,8 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
 
     if (auto sl = dynamic_cast<UiSlider*>(elem)) {
         QSlider* s = new QSlider(Qt::Horizontal);
-        s->setRange(sl->minValue, sl->maxValue);
-        s->setValue(sl->value);
+        s->setRange(sl->getMinValue(), sl->getMaxValue());
+        s->setValue(sl->getValue());
 
         if (sl->onSlide)
             QObject::connect(s, &QSlider::valueChanged,
@@ -123,8 +120,8 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
 
     if (auto dl = dynamic_cast<UiDial*>(elem)) {
         QDial* d = new QDial;
-        d->setRange(dl->minValue, dl->maxValue);
-        d->setValue(dl->value);
+        d->setRange(dl->getMinValue(), dl->getMaxValue());
+        d->setValue(dl->getValue());
 
         if (dl->onSlide) {
             QObject::connect(d, &QDial::valueChanged,
@@ -140,8 +137,8 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
 
     if (auto pb = dynamic_cast<UiProgressBar*>(elem)) {
         QProgressBar* p = new QProgressBar;
-        p->setRange(pb->minValue, pb->maxValue);
-        p->setValue(pb->value);
+        p->setRange(pb->getMinValue(), pb->getMaxValue());
+        p->setValue(pb->getValue());
         // ориентации можно добавить позже
         return p;
     }
@@ -224,22 +221,11 @@ QWidget* UiRenderer::renderContainer(UiContainer* container) { // тут име�
     w->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     w->setLayout(lay);
 
-    for (auto& ch : container->getChildren()) {
+    for (auto& ch : container->getChildrens()) {
         QWidget* child = renderElement(ch.get());
         lay->addWidget(child);
     }
     lay->addStretch();
-
-    return w;
-}
-
-QWidget* UiRenderer::renderGroup(UiGroup* group) {
-    QWidget* w = new QWidget;
-    auto lay = makeLayout(group->sort);
-    w->setLayout(lay);
-
-    for (auto& ch : group->getChildren())
-        lay->addWidget(renderElement(ch.get()));
 
     return w;
 }
@@ -268,5 +254,5 @@ void UiRenderer::renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tab
     // ВКЛАДКИ МОЖНО ЗАПУСТИТЬ ОТДЕЛЬНЫМ ОКНОМ!!! ЛОЛ
 
      QWidget* content = renderPage(root.get());
-     tabTarget->insertTab(root->index, content, QString::fromStdString(root->title));
+    tabTarget->insertTab(root->getIndex(), content, QString::fromStdString(root->getTitle()));
 }

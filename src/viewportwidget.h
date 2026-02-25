@@ -272,7 +272,7 @@ private:
         bx::mtxRotateXYZ(rotMat, -m_yaw, m_pitch, m_roll);
         std::cout<< std::to_string(m_pitch) << std::endl;
 
-
+// FIXME: Трекер не отрубается вслед за программой
         memcpy(model, rotMat, sizeof(model));
 
         bgfx::setTransform(model);

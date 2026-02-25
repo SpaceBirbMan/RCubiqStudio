@@ -3,9 +3,7 @@
 
 #include "eventmanager.h"
 #include <iostream>
-#include "icacheable.h"
 #include <vector>
-#include <thread>
 
 class AppCore
 {

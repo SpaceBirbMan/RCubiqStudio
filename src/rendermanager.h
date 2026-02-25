@@ -4,12 +4,8 @@
 #include <string>
 #include "icacheable.h"
 #include "appcore.h"
-#include "renderapi.h"
 
 #include <vector>
-#include "unordered_map"
-#include <set>
-#include "shorts.h"
 #include "misc.h"
 
 class RenderManager : public ICacheable

@@ -11,8 +11,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(QT_VERSION_MAJOR 6)
 
-# Qt6 является основным, но если найти ему замену, можно будет выбрать и Qt5 + будет проще заменить графический фреймворк
-
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2 Quick3D)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2 Quick3D)
 find_package(PkgConfig REQUIRED)
@@ -20,108 +18,47 @@ find_package(PkgConfig REQUIRED)
 set(TS_FILES M3_ru_RU.ts)
 set(QT_CREATOR_SKIP_MAINTENANCE_TOOL_PROVIDER ON)
 
-set(PROJECT_SOURCES
-        main.cpp
-        mainwindow.cpp
-        mainwindow.h
-        mainwindow.ui
-        ${TS_FILES}
+# --- Сбор исходных файлов ---
+# Рекурсивно ищем все исходники в текущей директории и подпапках
+file(GLOB_RECURSE PROJECT_SOURCES
+    "*.cpp"
+    "*.h"
+    "*.ui"
+    "*.qml"
+    "*.qrc"
+    "*.qmodel"
+    "*.sc"
 )
 
+# Исключаем файлы из папок сборки, если они вдруг попали в дерево проекта
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "build/.*")
+
+# Явно добавляем файлы переводов, если GLOB их не захватил (хотя .ts обычно не компилируются в бинарник напрямую, а идут в qt_create_translation)
+# Список для qt_add_executable должен содержать только код и ресурсы. TS файлы передаются отдельно в qt_create_translation.
+# Поэтому убираем ${TS_FILES} из списка исходников для executable, если они попали туда через GLOB (*.ts),
+# но в данном шаблоне GLOB настроен на cpp/h/ui/qml/qrc/qmodel, так что TS не попадут.
+
+# --- Настройка исполняемого файла ---
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(M3
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
-
-        eventmanager.h eventmanager.cpp
-        eventqueue.h
-        appmessage.h
-        appcore.h appcore.cpp
-        datamanager.h datamanager.cpp
-        model.qmodel
-        modelmanager.h modelmanager.cpp
-        cachemanager.h cachemanager.cpp
-        crashreportmanager.h crashreportmanager.cpp
-        fileloader.h fileloader.cpp
-        filesaver.h filesaver.cpp
-        libs.h
-        messageprocessor.h messageprocessor.cpp
-        fileinstance.h fileinstance.cpp
-        filetypes.h
-        enginemanager.h enginemanager.cpp
-
-        shorts.h
-        DevGuide.md
-
-        dynamiclibrary.h dynamiclibrary.cpp
-        devicemanager.h devicemanager.cpp
-        deviceregistrator.h deviceregistrator.cpp
-        inputdevice.h inputdevice.cpp
-        testEng/core.h testEng/core.cpp
-        testEng/puppetmodel.h testEng/puppetmodel.cpp
-        testEng/inputhandler.h testEng/inputhandler.cpp
-        testEng/rendercontroller.h testEng/rendercontroller.cpp
-        testEng/modelfactory.h testEng/modelfactory.cpp
-        misc.h
-        icacheable.h
-        resources.qrc
-        consts.h
-
-        abstractuinodes.h
-        uirenderer.h uirenderer.cpp
-
-        outputdevice.cpp
-        outputdevice.h
-
-        framequeue.h framequeue.cpp
-        frameview.h frameview.cpp
-
-
-        commandlistimpl.h commandlistimpl.cpp
-
-        mainwindow2.ui
-        main.qml
-        viewportwidget.h
-        rendermanager.h rendermanager.cpp
-        renderapi.h
-        viewportwidget.cpp
-        cube.vs.sc
-        cube.fs.sc
-        varying.def.sc
-        trackermanager.h trackermanager.cpp
-        devices.h devices.cpp
-
     )
-# Define target properties for Android with Qt 6 as:
-#    set_property(TARGET M3 APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
-#                 ${CMAKE_CURRENT_SOURCE_DIR}/android)
-# For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
 
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 else()
     if(ANDROID)
-        add_library(M3 SHARED
-            ${PROJECT_SOURCES}
-        )
-# Define properties for Android with Qt 5 after find_package() calls as:
-#    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
+        add_library(M3 SHARED ${PROJECT_SOURCES})
     else()
-        add_executable(M3
-            ${PROJECT_SOURCES}
-        )
+        add_executable(M3 ${PROJECT_SOURCES})
     endif()
 
     qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 endif()
 
-# if(MINGW)
-#     set(CMAKE_EXE_LINKER_FLAGS "-static")
-# endif()
-
+# --- Библиотеки и зависимости ---
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio INTERFACE ${CMAKE_SOURCE_DIR}/../miniaudio-0.11.24)
-
-find_package(PkgConfig REQUIRED)
 
 find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui)
 pkg_check_modules(HIDAPI REQUIRED IMPORTED_TARGET hidapi)
@@ -129,19 +66,25 @@ pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 pkg_check_modules(SERIALPORT REQUIRED libserialport)
 
 target_include_directories(M3 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/shaders")
-set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-d") # Буква d означает debug-сборку библиотеки
+
+set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-d")
 set(BIN_DIRS "${BGFX_ROOT}/bin")
+
 target_include_directories(M3 PRIVATE ${BGFX_ROOT}/include)
 target_link_directories(M3 PRIVATE ${BGFX_ROOT}/lib)
+
 add_compile_definitions(BX_CONFIG_DEBUG=1)
-message(${OpenCV_LIBS})
+
+message(STATUS "OpenCV libs: ${OpenCV_LIBS}")
+
 target_link_libraries(
-    M3 PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+    M3 PRIVATE
+    Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Quick
     Qt${QT_VERSION_MAJOR}::QuickWidgets
-    Qt6::Gui
-    Qt6::QuickControls2
-    Qt6::GuiPrivate
+    Qt${QT_VERSION_MAJOR}::Gui
+    Qt${QT_VERSION_MAJOR}::QuickControls2
+    # Qt6::GuiPrivate - убедитесь, что этот компонент доступен в вашей установке Qt
     bgfx
     bx
     bimg
@@ -158,16 +101,13 @@ if(WIN32)
     target_link_libraries(M3 PRIVATE winmm setupapi)
 endif()
 
-# set(BX_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bx")
-# set(BIMG_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bimg")
-# set(BGFX_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bgfx")
-# add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/bgfx.cmake" bgfx-build)
+# --- Компиляция шейдеров ---
+# Рекурсивный поиск шейдеров во всех подпапках
+file(GLOB_RECURSE VERTEX_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.vs.sc")
+file(GLOB_RECURSE FRAGMENT_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.fs.sc")
 
-file(GLOB VERTEX_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.vs.sc")
-file(GLOB FRAGMENT_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.fs.sc")
-
-message(STATUS "Vertex shaders: ${VERTEX_SHADERS}")
-message(STATUS "Fragment shaders: ${FRAGMENT_SHADERS}")
+message(STATUS "Vertex shaders found: ${VERTEX_SHADERS}")
+message(STATUS "Fragment shaders found: ${FRAGMENT_SHADERS}")
 
 set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
@@ -190,7 +130,10 @@ endif()
 
 function(compile_shader TYPE INPUT OUTPUT_DIR RENDERER PROFILE)
     get_filename_component(FILE_NAME ${INPUT} NAME_WE)
+    # Учитываем относительный путь файла, чтобы сохранить структуру папок в выходных данных (опционально)
+    # Или просто кладем все в одну папку, как было раньше. Оставим плоскую структуру для совместимости с кодом загрузки.
     set(OUTPUT_BIN "${OUTPUT_DIR}/${FILE_NAME}_${TYPE}.bin")
+
     add_custom_command(
         OUTPUT ${OUTPUT_BIN}
         COMMAND "${BIN_DIRS}/shaderc"
@@ -207,58 +150,10 @@ function(compile_shader TYPE INPUT OUTPUT_DIR RENDERER PROFILE)
     set(COMPILED_SHADERS ${COMPILED_SHADERS} ${OUTPUT_BIN} PARENT_SCOPE)
 endfunction()
 
-function(copy_opencv_dependencies target_name output_path)
-    get_target_property(LINK_LIBS ${target_name} LINK_LIBRARIES)
-    if(NOT LINK_LIBS)
-        return()
-    endif()
-
-    # Используем рекурсивный обход всех связанных библиотек
-    list(APPEND libs_to_check ${LINK_LIBS})
-    set(processed_libs "")
-
-    while(libs_to_check)
-        list(POP_FRONT libs_to_check lib)
-
-        # Пропускаем уже обработанные и служебные записи
-        if(lib IN_LIST processed_libs OR lib MATCHES "^\\$" OR lib MATCHES "debug|optimized|general")
-            continue()
-        endif()
-        list(APPEND processed_libs lib)
-
-        if(TARGET ${lib})
-            # Получаем расположение библиотеки
-            get_target_property(lib_location ${lib} LOCATION)
-
-            # Если это DLL, копируем её
-            if(lib_location AND lib_location MATCHES "\\.dll$")
-                file(COPY ${lib_location} DESTINATION ${output_path})
-                message(STATUS "Copied DLL: ${lib_location}")
-            endif()
-
-            # Добавляем зависимости этой библиотеки в очередь проверки
-            get_target_property(lib_deps ${lib} INTERFACE_LINK_LIBRARIES)
-            if(lib_deps)
-                list(APPEND libs_to_check ${lib_deps})
-            endif()
-
-            # Для импортированных целей иногда зависимости лежат в LINK_LIBRARIES
-            get_target_property(lib_direct_deps ${lib} LINK_LIBRARIES)
-            if(lib_direct_deps)
-                list(APPEND libs_to_check ${lib_direct_deps})
-            endif()
-        endif()
-    endwhile()
-endfunction()
-
-message(STATUS "VERTEX_SHADERS = ${VERTEX_SHADERS}")
-message(STATUS "FRAGMENT_SHADERS = ${FRAGMENT_SHADERS}")
-message(STATUS "SHADER_OUTPUT_DIR = ${SHADER_OUTPUT_DIR}")
-message(STATUS "SHADER_RENDERER = ${SHADER_RENDERER}")
-
 foreach(SHADER ${VERTEX_SHADERS})
     compile_shader("vertex" ${SHADER} ${SHADER_OUTPUT_DIR} ${SHADER_RENDERER} ${SHADER_PROFILE})
 endforeach()
+
 foreach(SHADER ${FRAGMENT_SHADERS})
     compile_shader("fragment" ${SHADER} ${SHADER_OUTPUT_DIR} ${SHADER_RENDERER} ${SHADER_PROFILE})
 endforeach()
@@ -268,12 +163,11 @@ add_dependencies(M3 shaders)
 
 target_include_directories(M3 PRIVATE ${SHADER_OUTPUT_DIR})
 
-# Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
-# If you are developing for iOS or macOS you should consider setting an
-# explicit, fixed bundle identifier manually though.
+# --- Свойства цели и установка ---
 if(${QT_VERSION} VERSION_LESS 6.1.0)
-  set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER com.example.M3)
+    set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER com.example.M3)
 endif()
+
 set_target_properties(M3 PROPERTIES
     ${BUNDLE_ID_OPTION}
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
@@ -289,7 +183,7 @@ install(TARGETS M3
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-
+# --- Копирование зависимостей ---
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/Debug")
 else()
@@ -297,6 +191,44 @@ else()
 endif()
 
 file(MAKE_DIRECTORY ${OUTPUT_DIR})
+
+function(copy_opencv_dependencies target_name output_path)
+    get_target_property(LINK_LIBS ${target_name} LINK_LIBRARIES)
+    if(NOT LINK_LIBS)
+        return()
+    endif()
+
+    list(APPEND libs_to_check ${LINK_LIBS})
+    set(processed_libs "")
+
+    while(libs_to_check)
+        list(POP_FRONT libs_to_check lib)
+
+        if(lib IN_LIST processed_libs OR lib MATCHES "^\\$" OR lib MATCHES "debug|optimized|general")
+            continue()
+        endif()
+        list(APPEND processed_libs lib)
+
+        if(TARGET ${lib})
+            get_target_property(lib_location ${lib} LOCATION)
+
+            if(lib_location AND lib_location MATCHES "\\.dll$")
+                file(COPY ${lib_location} DESTINATION ${output_path})
+                message(STATUS "Copied DLL: ${lib_location}")
+            endif()
+
+            get_target_property(lib_deps ${lib} INTERFACE_LINK_LIBRARIES)
+            if(lib_deps)
+                list(APPEND libs_to_check ${lib_deps})
+            endif()
+
+            get_target_property(lib_direct_deps ${lib} LINK_LIBRARIES)
+            if(lib_direct_deps)
+                list(APPEND libs_to_check ${lib_direct_deps})
+            endif()
+        endif()
+    endwhile()
+endfunction()
 
 copy_opencv_dependencies(M3 ${OUTPUT_DIR})
 

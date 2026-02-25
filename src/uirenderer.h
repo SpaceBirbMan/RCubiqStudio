@@ -27,7 +27,6 @@ class UiRenderer {
 public:
     static QWidget* renderElement(UiElement* elem);
     static QWidget* renderContainer(UiContainer* container);
-    static QWidget* renderGroup(UiGroup* group);
     static QWidget* renderPage(UiPage* page);
     static QWidget* renderTree(UiTreeView* tree);
     static QWidget* renderImageBox(UiImageBox* imgBox);
