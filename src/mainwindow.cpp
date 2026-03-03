@@ -1,23 +1,27 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include <QQuickView>
+#include <QTableWidget>
+#include <QHeaderView>
 #include "viewportwidget.h"
 #include "devices.h"
 #include "uirenderer.h"
+#include <QDebug>
+#include <QTimer>
+#include <qobjectdefs.h>
+#include <qthread.h>
+#include <QMetaObject>
 
 using namespace RUI;
 
-MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозрение, что интерфейс нужно поднимать через ленивую инициализацию, чтобы запуск был быстрый
+MainWindow::MainWindow(QWidget *parent, AppCore *core)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     this->core = core;
     ui->setupUi(this);
 
-    auto* customViewport = new ViewportWidget(ui->viewport->parentWidget());
-    ui->gridLayout_2->replaceWidget(ui->viewport, customViewport);
-    delete ui->viewport;
-    ui->viewport = customViewport;
+    _updateTimer = nullptr;
 
     core->getEventManager().subscribe("cache_err", &MainWindow::showCacheErrorMessage, this);
     core->getEventManager().subscribe("send_control_table", &MainWindow::setControlsTable, this);
@@ -26,6 +30,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
     core->getEventManager().subscribe(name, "get_video_devices_respond", &MainWindow::setVideoDevices, this);
     core->getEventManager().subscribe(name, "active_camera_info", &MainWindow::setActiveCamera, this);
     core->getEventManager().subscribe(name, "active_camera_device", &MainWindow::startCamera, this);
+    core->getEventManager().subscribe(name, "send_table", &MainWindow::initTrackerTable, this);
     //core->getEventManager().subscribe("send_frame_queue", &MainWindow::connectFramesToViewport, this);
     core->getEventManager().subscribe("update_engines_combo", &MainWindow::updateEnginesCombo, this);
     core->getEventManager().subscribe("update_trackers_combo", &MainWindow::updateTrackersCombo, this);
@@ -39,6 +44,14 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core) // есть подозр�
     connect(ui->videoDeviceComboBox, &QComboBox::currentTextChanged, this, &MainWindow::cameraChanged);
     connect(ui->trackerComboBox, &QComboBox::currentTextChanged, this, &MainWindow::trackerChanged);
     connect(ui->addTrackerButton, &QPushButton::clicked, this, &MainWindow::addTrackers);
+    connect(ui->startTracker, &QPushButton::clicked, this, &MainWindow::startTracker);
+    connect(ui->stopTracker, &QPushButton::clicked, this, &MainWindow::stopTracker);
+
+    ViewportWidget* vw = new ViewportWidget(core, this);
+
+    ui->gridLayout_2->replaceWidget(ui->viewport, vw);
+    delete ui->viewport;
+    ui->viewport = vw;
 
     QVBoxLayout *layout = new QVBoxLayout(ui->frameForFace);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -127,6 +140,146 @@ void MainWindow::onFrameReceived(const QByteArray &jpegData) {
 void MainWindow::showCacheErrorMessage() {
     std::cout << "Cache doesn't exists, idi peredelivay" << std::endl;
 }
+
+void MainWindow::initTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table) {
+    if (table != nullptr) {
+    if (QThread::currentThread() != qApp->thread()) {
+        qDebug() << "[THREAD] Wrong thread! Re-invoking via QueuedConnection with Lambda...";
+
+        QMetaObject::invokeMethod(this, [this, table]() {
+            this->initTrackerTable(table);
+        }, Qt::QueuedConnection);
+        return;
+    }
+    if (table->empty()) return;
+    _trackerTableCache = table;
+
+    QTableWidget* tbl = ui->tableTrackerWidget;
+    tbl->setUpdatesEnabled(false);
+    tbl->clear();
+    tbl->setRowCount(static_cast<int>(table->size()));
+    tbl->setColumnCount(2);
+    tbl->setHorizontalHeaderLabels({"Parameter", "Value"});
+
+    tbl->horizontalHeader()->setStretchLastSection(true);
+    tbl->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    tbl->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    tbl->verticalHeader()->setVisible(false);
+    tbl->setAlternatingRowColors(true);
+    tbl->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    int row = 0;
+    for (const auto& [name, ptr] : *table) {
+        auto* nameItem = new QTableWidgetItem(QString::fromStdString(name));
+        tbl->setItem(row, 0, nameItem);
+
+        void* rawPtr = ptr.get();
+        quint64 addr = reinterpret_cast<quint64>(rawPtr);
+
+        nameItem->setData(Qt::UserRole, QVariant::fromValue<qulonglong>(addr));
+
+        tbl->setItem(row, 1, new QTableWidgetItem(""));
+        row++;
+    }
+    tbl->setUpdatesEnabled(true);
+
+    if (!_updateTimer) {
+        _updateTimer = new QTimer(this);
+        connect(_updateTimer, &QTimer::timeout, this, &MainWindow::updateTrackerTable);
+        _updateTimer->start(16);
+        qDebug() << "[TIMER] Timer created and started. Event loop should be running.";
+    }
+    }
+}
+
+void MainWindow::updateTrackerTable() {
+    static int callCount = 0;
+    callCount++;
+
+    QTableWidget* tbl = ui->tableTrackerWidget;
+    if (!tbl || tbl->rowCount() == 0) return;
+
+    tbl->blockSignals(true);
+    bool wasUpdatesEnabled = tbl->updatesEnabled();
+    tbl->setUpdatesEnabled(false);
+
+    for (int row = 0; row < tbl->rowCount(); ++row) {
+        QTableWidgetItem* nameItem = tbl->item(row, 0);
+        if (!nameItem) continue;
+
+        QVariant var = nameItem->data(Qt::UserRole);
+        if (!var.isValid()) continue;
+
+        qulonglong addr = var.value<qulonglong>();
+        if (addr == 0) continue;
+
+        void* rawPtr = reinterpret_cast<void*>(static_cast<uintptr_t>(addr));
+
+        const std::string paramName = nameItem->text().toStdString();
+        QString valueStr;
+        bool hasData = false;
+
+        try {
+            if (paramName == "timestamp") {
+                double val = *reinterpret_cast<double*>(rawPtr);
+
+                if (val > 0.0) {
+                    valueStr = QString::number(val, 'f', 6);
+                    hasData = true;
+                } else {
+                    valueStr = "-";
+                }
+            }
+            else if (paramName == "faceId") {
+                int val = *reinterpret_cast<int*>(rawPtr);
+
+                if (val >= 0) {
+                    valueStr = QString::number(val);
+                    hasData = true;
+                } else {
+                    valueStr = "-";
+                }
+            }
+            else if (paramName == "success") {
+                bool val = *reinterpret_cast<bool*>(rawPtr);
+                valueStr = val ? "true" : "false";
+                hasData = true;
+            }
+            else {
+                float val = *reinterpret_cast<float*>(rawPtr);
+
+
+                if (std::isnan(val) || std::isinf(val)) {
+                    valueStr = "NaN";
+                    hasData = true;
+                }
+
+                else {
+                    valueStr = QString::number(val, 'f', 5);
+                    hasData = true;
+                }
+            }
+        } catch (...) {
+            valueStr = "Err";
+        }
+
+        QTableWidgetItem* valItem = tbl->item(row, 1);
+        if (!valItem) {
+            valItem = new QTableWidgetItem(valueStr);
+            tbl->setItem(row, 1, valItem);
+        } else {
+
+            if (valItem->text() != valueStr) {
+                valItem->setText(valueStr);
+
+            }
+        }
+    }
+
+    tbl->setUpdatesEnabled(wasUpdatesEnabled);
+    tbl->blockSignals(false);
+}
+
 
 void MainWindow::onNewFileClicked() {
     this->core->getEventManager().sendMessage(AppMessage("UI", "new", 0));
@@ -249,4 +402,12 @@ void MainWindow::setRenderApi() {
 
     std::cout << fileName.toStdString() << std::endl;
     core->getEventManager().sendMessage(AppMessage("UI", "set_render_api", fileName.toStdString()));
+}
+
+void MainWindow::startTracker() {
+    core->getEventManager().sendMessage(AppMessage(name, "start_tracker", 0));
+}
+
+void MainWindow::stopTracker() {
+    core->getEventManager().sendMessage(AppMessage(name, "stop_tracker", 0));
 }

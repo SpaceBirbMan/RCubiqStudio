@@ -180,13 +180,16 @@ QWidget* UiRenderer::renderImageBox(UiImageBox* imgBox) {
     btn->setStyleSheet("QPushButton { border: 1px dashed gray; }");
 
     auto updateButton = [btn, imgBox]() {
-        if (imgBox->hasImage && !imgBox->imagePath.empty()) {
+        if (imgBox->hasImage && imgBox->imagePath != nullptr) {
             QPixmap pixmap(QString::fromStdString(imgBox->imagePath));
             if (!pixmap.isNull()) {
                 btn->setIcon(QIcon(pixmap));
                 btn->setIconSize(pixmap.size().scaled(btn->size() - QSize(10, 10), Qt::KeepAspectRatio));
                 btn->setText("");
                 btn->setStyleSheet("");
+
+                std::cout << "IMAGE: " << imgBox->imagePath << std::endl;
+
                 return;
             }
         }
@@ -207,9 +210,13 @@ QWidget* UiRenderer::renderImageBox(UiImageBox* imgBox) {
 
         if (!filePath.isEmpty()) {
             imgBox->setImage(filePath.toStdString());
-            updateButton(); // обновляем вид
+
+            updateButton();
         }
+
     });
+
+
 
     return btn;
 }

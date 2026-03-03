@@ -3,7 +3,6 @@
 
 #include <vector>
 #include "appcore.h"
-#include "unordered_map"
 #include <set>
 #include "shorts.h"
 #include "icacheable.h"
@@ -61,6 +60,8 @@ private:
     void getActiveFrames();
 
     void addNames(std::vector<std::string> names);
+    void startRendering(std::deque<std::shared_ptr<void>>* ptrs);
+    void sendTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table);
 
 };
 

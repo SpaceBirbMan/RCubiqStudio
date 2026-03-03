@@ -4,7 +4,6 @@
 #include "eventqueue.h"
 #include <vector>
 #include <functional>
-#include <unordered_map>
 #include <any>
 #include "misc.h"
 

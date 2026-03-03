@@ -18,6 +18,13 @@ find_package(PkgConfig REQUIRED)
 set(TS_FILES M3_ru_RU.ts)
 set(QT_CREATOR_SKIP_MAINTENANCE_TOOL_PROVIDER ON)
 
+set(CMAKE_AUTOUIC_SEARCH_PATHS
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/ui
+    ${CMAKE_SOURCE_DIR}/shaders
+)
+
 # --- Сбор исходных файлов ---
 # Рекурсивно ищем все исходники в текущей директории и подпапках
 file(GLOB_RECURSE PROJECT_SOURCES
@@ -30,13 +37,11 @@ file(GLOB_RECURSE PROJECT_SOURCES
     "*.sc"
 )
 
+# нужны ли функции для частичной сборки (только ui, только весь интерфейс, т.д.)
+
 # Исключаем файлы из папок сборки, если они вдруг попали в дерево проекта
 list(FILTER PROJECT_SOURCES EXCLUDE REGEX "build/.*")
 
-# Явно добавляем файлы переводов, если GLOB их не захватил (хотя .ts обычно не компилируются в бинарник напрямую, а идут в qt_create_translation)
-# Список для qt_add_executable должен содержать только код и ресурсы. TS файлы передаются отдельно в qt_create_translation.
-# Поэтому убираем ${TS_FILES} из списка исходников для executable, если они попали туда через GLOB (*.ts),
-# но в данном шаблоне GLOB настроен на cpp/h/ui/qml/qrc/qmodel, так что TS не попадут.
 
 # --- Настройка исполняемого файла ---
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
@@ -84,7 +89,6 @@ target_link_libraries(
     Qt${QT_VERSION_MAJOR}::QuickWidgets
     Qt${QT_VERSION_MAJOR}::Gui
     Qt${QT_VERSION_MAJOR}::QuickControls2
-    # Qt6::GuiPrivate - убедитесь, что этот компонент доступен в вашей установке Qt
     bgfx
     bx
     bimg

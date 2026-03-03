@@ -1,7 +1,6 @@
 #include "mainwindow.h"
 #include "datamanager.h"
 #include "enginemanager.h"
-#include "testEng/core.h"
 #include "rendermanager.h"
 #include "devicemanager.h"
 #include "trackermanager.h"
@@ -22,6 +21,7 @@
 void sendSaveCacheMessage(AppCore* core) {
     if (core) {
         core->getEventManager().sendMessage(AppMessage("main", "save_cache", 0));
+        core->getEventManager().sendMessage(AppMessage("main", "stop_tracker", 0));
     }
 }
 
@@ -56,6 +56,8 @@ int main(int argc, char *argv[])
     core->registerModule(egm->name);
     core->registerModule(renm->cacheKey());
     core->registerModule(tkm->cacheKey());
+
+
 
     core->getEventManager().sendMessage(AppMessage("main", "askToPreInit", 0)); // вместо нуля можно аргументы
 #ifndef QML

@@ -34,7 +34,7 @@ public:
 
     void setTracker(std::shared_ptr<ITracker> tracker);
 
-    bool startTracking();
+    void startTracking();
     void stopTracking();
 
     bool isRunning() const;

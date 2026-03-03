@@ -8,6 +8,8 @@ TrackerManager::TrackerManager(AppCore* core) {
     this->core->getEventManager().subscribe(name, "tracker_resolving_respond", &TrackerManager::activateTracker, this);
     this->core->getEventManager().subscribe(name, "set_data", &TrackerManager::deserializeCache, this);
     this->core->getEventManager().subscribe(name, "add_trackers_names", &TrackerManager::addNames, this);
+    this->core->getEventManager().subscribe(name, "start_tracker", &TrackerManager::startTracking, this);
+    this->core->getEventManager().subscribe(name, "stop_tracker", &TrackerManager::stopTracking, this);
 }
 
 std::string TrackerManager::cacheKey() const  {
@@ -51,6 +53,22 @@ void TrackerManager::preInitialize() {
     core->getEventManager().sendMessage(AppMessage(name, "module_subscribed", name));
 }
 
+void TrackerManager::startTracking() {
+    if (tracker) {
+        if (!tracker->isRunning())
+            std::cout << "Run tracking" << std::endl;
+            this->tracker->start();
+    }
+}
+
+void TrackerManager::stopTracking() {
+    if (tracker) {
+        if (tracker->isRunning())
+            std::cout << "Stop tracking" << std::endl;
+            this->tracker->stop();
+    }
+}
+
 void TrackerManager::activateTracker(std::vector<void*> pointers) {
 
     if (pointers.empty()) {
@@ -72,17 +90,18 @@ void TrackerManager::activateTracker(std::vector<void*> pointers) {
 
     auto c = reinterpret_cast<CreateTracker>(pointers[0]);
     if (!c) {
-        std::cerr << "Invalid Create pointer";
+        std::cerr << "Invalid 'create' pointer";
         return;
     }
 
     tracker = c();
     if (!tracker) {
-        std::cerr << "Engine creation failed";
+        std::cerr << "Tracker creation failed";
         return;
     }
 
     tracker->start();
+    core->getEventManager().sendMessage(AppMessage(name, "send_table", tracker->getTable()));
 
 }
 

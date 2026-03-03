@@ -1,13 +1,12 @@
 #ifndef DEVICES_H
 #define DEVICES_H
 
+#define NOBYTE
+#define WIN32_LEAN_AND_MEAN
 #include <hidapi/hidapi.h>
 #include <opencv2/opencv.hpp>
 #define MA_NO_JACK
 #include "miniaudio.h"
-#ifdef byte
-#undef byte
-#endif
 
 #include <string>
 #include <mutex>

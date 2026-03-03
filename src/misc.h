@@ -1,6 +1,7 @@
 #ifndef MISC_H
 #define MISC_H
 
+#include <set>
 #include <string>
 #include <functional>
 #include <any>
@@ -36,19 +37,22 @@ struct subStruct {
         : receiver(std::move(r)), name(std::move(m)), callback(std::move(cb)) {}
 };
 
+struct EngineMeta {
+
+    std::unordered_map<std::string, std::shared_ptr<void>>* table;
+
+};
+
 class IModel {
 public:
     virtual ~IModel() = default;
     virtual std::shared_ptr<renderQueue> acquireRenderQueue() = 0;
     virtual std::shared_ptr<std::deque<std::any>> acquireControlQueue() = 0;
     virtual void processControl(const std::any& cmd) = 0;
-    virtual void subscribeToEvents(
-        const std::string& event,
-        std::function<void(const std::any&)> callback,
-        void* subscriber
-        ) = 0;
     virtual void test() = 0;
     virtual std::shared_ptr<std::vector<RUI::UiPage>> getUiPages() = 0;
+    virtual void setHandlersQueue(std::deque<std::shared_ptr<void>>* ptrs) = 0;
+    virtual void setMeta(EngineMeta meta) = 0;
 };
 
 class IRenderer {
@@ -87,17 +91,14 @@ struct TrackerInfo {
 
 };
 
-struct TrackingData {
-    // может хватить jsonа, так как неизвестно, что в данных будет + они всё равно в таблицу будут передваться
-};
-
 class ITracker {
 public:
     virtual ~ITracker() = default;
     virtual bool start() = 0;
     virtual void stop() = 0;
     virtual bool isRunning() const = 0;
-    virtual TrackingData getData() const = 0;
+    virtual std::unordered_map<std::string, std::shared_ptr<void>>* getTable() const = 0;
+
 };
 
 using CreateEngine = IModel* (*)(void);

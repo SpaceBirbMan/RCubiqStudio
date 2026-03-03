@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1071</width>
-    <height>600</height>
+    <width>1074</width>
+    <height>614</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -20,24 +20,11 @@
      <verstretch>0</verstretch>
     </sizepolicy>
    </property>
-   <layout class="QGridLayout" name="gridLayout_2" columnstretch="3,6,3">
-    <item row="0" column="1">
+   <layout class="QGridLayout" name="gridLayout_2" columnstretch="3,5,3">
+    <item row="1" column="1">
      <widget class="QWidget" name="viewport" native="true"/>
     </item>
-    <item row="0" column="0">
-     <widget class="QTabWidget" name="leftPanel">
-      <property name="tabPosition">
-       <enum>QTabWidget::TabPosition::West</enum>
-      </property>
-      <property name="currentIndex">
-       <number>-1</number>
-      </property>
-      <property name="movable">
-       <bool>true</bool>
-      </property>
-     </widget>
-    </item>
-    <item row="0" column="2">
+    <item row="1" column="2">
      <widget class="QTabWidget" name="rightPanel">
       <property name="tabPosition">
        <enum>QTabWidget::TabPosition::East</enum>
@@ -72,8 +59,8 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>220</width>
-             <height>503</height>
+             <width>244</width>
+             <height>507</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
@@ -120,15 +107,40 @@
                <property name="geometry">
                 <rect>
                  <x>0</x>
-                 <y>-22</y>
-                 <width>193</width>
-                 <height>341</height>
+                 <y>0</y>
+                 <width>205</width>
+                 <height>411</height>
                 </rect>
                </property>
                <attribute name="label">
                 <string>Трекер</string>
                </attribute>
                <layout class="QVBoxLayout" name="verticalLayout_3">
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout_4">
+                  <item>
+                   <widget class="QPushButton" name="startTracker">
+                    <property name="text">
+                     <string>Включить</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="stopTracker">
+                    <property name="text">
+                     <string>Отключить</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="startWithProgrammCheck">
+                  <property name="text">
+                   <string>Включать при входе</string>
+                  </property>
+                 </widget>
+                </item>
                 <item>
                  <layout class="QHBoxLayout" name="horizontalLayout" stretch="50,1">
                   <item>
@@ -249,18 +261,23 @@
                 </item>
                </layout>
               </widget>
-              <widget class="QWidget" name="page_4">
+              <widget class="QWidget" name="pageTrackers">
                <property name="geometry">
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>198</width>
-                 <height>336</height>
+                 <width>222</width>
+                 <height>340</height>
                 </rect>
                </property>
                <attribute name="label">
                 <string>Привязки</string>
                </attribute>
+               <layout class="QVBoxLayout" name="verticalLayout_4">
+                <item>
+                 <widget class="QTableWidget" name="tableTrackerWidget"/>
+                </item>
+               </layout>
               </widget>
              </widget>
             </item>
@@ -274,8 +291,106 @@
        <attribute name="title">
         <string>Настройки</string>
        </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_5">
+        <item>
+         <widget class="QScrollArea" name="scrollArea">
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
+          <widget class="QWidget" name="scrollAreaWidgetContents_2">
+           <property name="geometry">
+            <rect>
+             <x>0</x>
+             <y>0</y>
+             <width>222</width>
+             <height>485</height>
+            </rect>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_6">
+            <item>
+             <widget class="QCheckBox" name="checkBox">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="text">
+               <string>Выводить информацию
+ о загрузке ЦП в целом,
+ а не только приложения</string>
+              </property>
+              <property name="checked">
+               <bool>false</bool>
+              </property>
+              <property name="autoRepeat">
+               <bool>false</bool>
+              </property>
+              <property name="autoExclusive">
+               <bool>false</bool>
+              </property>
+              <property name="tristate">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
       </widget>
      </widget>
+    </item>
+    <item row="1" column="0">
+     <widget class="QTabWidget" name="leftPanel">
+      <property name="tabPosition">
+       <enum>QTabWidget::TabPosition::West</enum>
+      </property>
+      <property name="currentIndex">
+       <number>-1</number>
+      </property>
+      <property name="movable">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+    <item row="0" column="2">
+     <layout class="QHBoxLayout" name="horizontalLayout_5">
+      <item>
+       <spacer name="horizontalSpacer">
+        <property name="orientation">
+         <enum>Qt::Orientation::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="label_4">
+        <property name="text">
+         <string>CPU: 0</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="label_3">
+        <property name="text">
+         <string>GPU: 0</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </item>
    </layout>
   </widget>
@@ -284,7 +399,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1071</width>
+     <width>1074</width>
      <height>25</height>
     </rect>
    </property>
@@ -319,17 +434,6 @@
    <addaction name="menu_3"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
-  <widget class="QToolBar" name="toolBar">
-   <property name="windowTitle">
-    <string>toolBar</string>
-   </property>
-   <attribute name="toolBarArea">
-    <enum>TopToolBarArea</enum>
-   </attribute>
-   <attribute name="toolBarBreak">
-    <bool>false</bool>
-   </attribute>
-  </widget>
   <action name="newFileMenuButton">
    <property name="text">
     <string>Новый файл</string>

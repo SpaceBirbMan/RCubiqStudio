@@ -2,6 +2,7 @@
 #define ABSTRACTUINODES_H
 
 #include <ctime>
+#include <iostream>
 #include <string>
 #include <vector>
 #include <memory>
@@ -457,25 +458,45 @@ public:
 
 class UiImageBox : public UiElement {
 public:
-    std::string imagePath;
+    const char* imagePath;
+
+    const uint32_t* pixels = nullptr;
+
     bool hasImage = false;
 
     std::function<void(const std::string&)> onImageSet;
     std::function<void()> onImageCleared;
     std::function<void()> onRequestImage;
 
-    void setImage(const std::string& path) {
-        imagePath = path;
+    const uint32_t* getPixels() {
+        return this->pixels;
+    }
+
+    void setPixels(const uint32_t* pixptr) {
+        this->pixels = pixptr;
+    }
+
+    void setImage(const std::string& path) { // setPath
+        imagePath = path.c_str();
         hasImage = !path.empty();
+        std::cout << "IMAGEIN: " << imagePath << std::endl;
         if (onImageSet && hasImage) onImageSet(path);
         if (onChange) onChange();
     }
 
     void clearImage() {
-        imagePath.clear();
+        imagePath = nullptr;
         hasImage = false;
         if (onImageCleared) onImageCleared();
         if (onChange) onChange();
+    }
+
+    std::string getPath() {
+        return imagePath;
+    }
+
+    const char* getConstPath() {
+        return imagePath;
     }
 };
 

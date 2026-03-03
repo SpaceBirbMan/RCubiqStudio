@@ -23,6 +23,8 @@ EngineManager::EngineManager(AppCore* acptr) {
 
     acptr->getEventManager().subscribe(name, "start_drawing_frames", &EngineManager::getActiveFrames, this);
     acptr->getEventManager().subscribe(name, "add_engines_names", &EngineManager::addNames, this);
+    acptr->getEventManager().subscribe(name, "send_texture_handlers_queue", &EngineManager::startRendering, this);
+    acptr->getEventManager().subscribe(name, "send_table", &EngineManager::sendTrackerTable, this);
 }
 
 void EngineManager::setFuncs(funcMap map) {
@@ -56,6 +58,18 @@ void EngineManager::initialize() {
     acptr->getEventManager().sendMessage(AppMessage(name, "build_gui", 0));
 }
 
+void EngineManager::startRendering(std::deque<std::shared_ptr<void>>* ptrs) {
+    std::cout << "Twisted Sister - We're Not Gonna Take It" << std::endl;
+    std::cout << engine << std::endl;
+    std::cout << ptrs << std::endl;
+    this->engine->setHandlersQueue(ptrs);
+}
+
+void EngineManager::sendTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table) {
+    EngineMeta em;
+    em.table = table;
+    this->engine->setMeta(em);
+}
 
 /**
  * @brief EngineManager::activateEngine - по приходу ответа от DataManager с массивом указателей, приводит адреса к типу функции.
@@ -106,6 +120,8 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
     } catch (...) {
         std::cout << "this thing not gonna work u da";
     }
+
+    acptr->getEventManager().sendMessage(AppMessage(name, "get_handlers_queue", 0));
 
 }
 

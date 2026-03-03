@@ -23,7 +23,6 @@ public:
     MainWindow(QWidget *parent = nullptr, AppCore* appCorePointer = nullptr);
     ~MainWindow();
 
-
 private:
     Ui::MainWindow *ui;
     AppCore* core;
@@ -48,6 +47,11 @@ private:
     void setActiveTracker(TrackerInfo info);
     void trackerChanged(const QString& tracker);
     void updateTrackersCombo(const std::set<std::string> &names);
+    void initTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table);
+    void updateTrackerTable();
+
+    QTimer* _updateTimer;
+    std::unordered_map<std::string, std::shared_ptr<void>> *_trackerTableCache;
 
     std::shared_ptr<renderQueue> frameQueue = nullptr;
 
@@ -59,5 +63,7 @@ private slots:
     void cameraChanged();
     void onFrameReceived(const QByteArray &jpegData);
     void addTrackers();
+    void startTracker();
+    void stopTracker();
 };
 #endif // MAINWINDOW_H
