@@ -5,9 +5,6 @@
 #include <condition_variable>
 #include <mutex>
 #include <atomic>
-#include <unordered_map>
-#include <any>
-#include <functional>
 #include "misc.h"
 
 class EventQueue; // решение циклической зависимости

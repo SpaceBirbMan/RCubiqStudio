@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include "devices.h"
 
+// модули для обработки действий с устройств (типа, кастом HID не всем надо)?
+
 // TODO: Сделать обновление при переподключении
 template<typename T>
 class DataBus {
@@ -37,6 +39,9 @@ public:
     }
 };
 
+// TODO: lock-free очереди вместо нынешних
+// FIXME: для очереди команд нужен паттерн Брокер или просто shared_ptr, для множественных получателей
+
 class DeviceManager {
 public:
 
@@ -51,6 +56,9 @@ public:
 
     std::vector<CameraInfo> enumerateCameras(int maxIndex = 10);
     std::vector<AudioDeviceInfo> getCaptureDevices();
+    std::vector<HidDeviceInfo> enumerateHidDevices(unsigned short vid = 0, unsigned short pid = 0);
+    // virtual camera
+    // spout viewport
 
     bool registerDevice(DevicePtr dev);
 
@@ -75,9 +83,13 @@ private:
 
     void sendVideoDevices();
     void activateCamera(std::string name);
+    void startHid();
+    void stopHid();
 
     std::unordered_map<std::string, DataBus<std::vector<uint8_t>>*> deviceDataBuses_;
     std::unordered_map<std::string, DataCallback> deviceCallbacks_;
+    std::thread hidThread_;
+    std::atomic<bool> hidRunning_{false};
 };
 
 #endif // DEVICEMANAGER_H

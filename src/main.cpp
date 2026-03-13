@@ -15,13 +15,14 @@
 #include <QQuickView>
 #include <QQmlEngine>
 
-
 // todo: Метод, просящий модуль подписаться на определённое событие (можно ввести уровни доверия, чтобы нельзя было втыкать опасные методы)
 // Вспомогательная функция для отправки сообщения о сохранении кэша
-void sendSaveCacheMessage(AppCore* core) {
-    if (core) {
+void sendSaveCacheMessage(AppCore *core)
+{
+    if (core)
+    {
         core->getEventManager().sendMessage(AppMessage("main", "save_cache", 0));
-        core->getEventManager().sendMessage(AppMessage("main", "stop_tracker", 0));
+        core->getEventManager().sendMessage(AppMessage("main", "stop_tracker", 0)); // надо дождаться завершения
     }
 }
 
@@ -42,7 +43,7 @@ int main(int argc, char *argv[])
     //     QThread::msleep(300);
     //     a.processEvents();
     // }
-/////////////////////////////////////////////////
+    /////////////////////////////////////////////////
     AppCore *core = new AppCore;
 
     DataManager *dtm = new DataManager(core);
@@ -52,12 +53,10 @@ int main(int argc, char *argv[])
     DeviceManager *dvm = new DeviceManager(core);
     TrackerManager *tkm = new TrackerManager(core);
 
-    //core->registerModule(dtm->name);
+    // core->registerModule(dtm->name);
     core->registerModule(egm->name);
     core->registerModule(renm->cacheKey());
     core->registerModule(tkm->cacheKey());
-
-
 
     core->getEventManager().sendMessage(AppMessage("main", "askToPreInit", 0)); // вместо нуля можно аргументы
 #ifndef QML
@@ -69,25 +68,23 @@ int main(int argc, char *argv[])
     // view.show();
 #endif
 
-    //TODO: Миграция с децентрализованной системы сообщений в централизованную либо генератор карты маршрутизации + тестер маршрутов
-/////////////////////////////////////////////////
-    //splash.finish(&mainWindow); // закрыть сплеш после показа окна
+    // TODO: Миграция с децентрализованной системы сообщений в централизованную либо генератор карты маршрутизации + тестер маршрутов
+    /////////////////////////////////////////////////
+    // splash.finish(&mainWindow); // закрыть сплеш после показа окна
     QTranslator translator;
     const QStringList uiLanguages = QLocale::system().uiLanguages();
-    for (const QString &locale : uiLanguages) {
+    for (const QString &locale : uiLanguages)
+    {
         const QString baseName = "M3_" + QLocale(locale).name();
-        if (translator.load(":/i18n/" + baseName)) {
+        if (translator.load(":/i18n/" + baseName))
+        {
             a.installTranslator(&translator);
             break;
         }
     }
 
-    QObject::connect(&a, &QApplication::aboutToQuit, [&core](){
-        sendSaveCacheMessage(core);
-    });
+    QObject::connect(&a, &QApplication::aboutToQuit, [&core]()
+                     { sendSaveCacheMessage(core); });
 
     return a.exec();
 }
-
-
-

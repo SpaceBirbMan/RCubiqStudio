@@ -77,6 +77,39 @@ set(BIN_DIRS "${BGFX_ROOT}/bin")
 
 target_include_directories(M3 PRIVATE ${BGFX_ROOT}/include)
 target_link_directories(M3 PRIVATE ${BGFX_ROOT}/lib)
+set(UIOHOOK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libuiohook")
+add_library(uiohook SHARED IMPORTED)
+set_target_properties(uiohook PROPERTIES IMPORTED_IMPLIB
+    "${UIOHOOK_DIR}/Debug/libuiohook.dll.a" IMPORTED_LOCATION
+    "${UIOHOOK_DIR}/Debug/libuiohook.dll"
+    INTERFACE_INCLUDE_DIRECTORIES
+    "${UIOHOOK_DIR}/libuiohook/include" )
+target_link_libraries(M3 PRIVATE uiohook)
+
+set(SPOUT_DIR "${CMAKE_SOURCE_DIR}/../spout2")
+set(SPOUT_LIB_DIR "${SPOUT_DIR}/INSTALL/lib")
+set(SPOUT_BIN_DIR "${SPOUT_DIR}/INSTALL/bin")
+
+target_include_directories(M3 PRIVATE
+    "${SPOUT_DIR}/INSTALL/include"
+)
+
+set(SPOUT_LIBS
+    "${SPOUT_LIB_DIR}/libSpoutDX.dll.a"
+    "${SPOUT_LIB_DIR}/libSpoutDX12.dll.a"
+    "${SPOUT_LIB_DIR}/libSpoutDX9.dll.a"
+    "${SPOUT_LIB_DIR}/libSpout.dll.a"
+    "${SPOUT_LIB_DIR}/libSpoutLibrary.dll.a"
+)
+target_compile_definitions(M3 PRIVATE
+    USE_SPOUT_DX
+    USE_SPOUT_DX12
+    USE_SPOUT_DX9
+    USE_SPOUT_GL
+    USE_SPOUT_LIBRARY
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE ${SPOUT_LIBS})
 
 add_compile_definitions(BX_CONFIG_DEBUG=1)
 
@@ -105,8 +138,6 @@ if(WIN32)
     target_link_libraries(M3 PRIVATE winmm setupapi)
 endif()
 
-# --- Компиляция шейдеров ---
-# Рекурсивный поиск шейдеров во всех подпапках
 file(GLOB_RECURSE VERTEX_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.vs.sc")
 file(GLOB_RECURSE FRAGMENT_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.fs.sc")
 
@@ -134,8 +165,6 @@ endif()
 
 function(compile_shader TYPE INPUT OUTPUT_DIR RENDERER PROFILE)
     get_filename_component(FILE_NAME ${INPUT} NAME_WE)
-    # Учитываем относительный путь файла, чтобы сохранить структуру папок в выходных данных (опционально)
-    # Или просто кладем все в одну папку, как было раньше. Оставим плоскую структуру для совместимости с кодом загрузки.
     set(OUTPUT_BIN "${OUTPUT_DIR}/${FILE_NAME}_${TYPE}.bin")
 
     add_custom_command(
@@ -187,54 +216,54 @@ install(TARGETS M3
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-# --- Копирование зависимостей ---
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/Debug")
-else()
-    set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/Release")
-endif()
+# # --- Копирование зависимостей ---
+# if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+#     set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/Debug")
+# else()
+#     set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/Release")
+# endif()
 
-file(MAKE_DIRECTORY ${OUTPUT_DIR})
+# file(MAKE_DIRECTORY ${OUTPUT_DIR})
 
-function(copy_opencv_dependencies target_name output_path)
-    get_target_property(LINK_LIBS ${target_name} LINK_LIBRARIES)
-    if(NOT LINK_LIBS)
-        return()
-    endif()
+# function(copy_opencv_dependencies target_name output_path)
+#     get_target_property(LINK_LIBS ${target_name} LINK_LIBRARIES)
+#     if(NOT LINK_LIBS)
+#         return()
+#     endif()
 
-    list(APPEND libs_to_check ${LINK_LIBS})
-    set(processed_libs "")
+#     list(APPEND libs_to_check ${LINK_LIBS})
+#     set(processed_libs "")
 
-    while(libs_to_check)
-        list(POP_FRONT libs_to_check lib)
+#     while(libs_to_check)
+#         list(POP_FRONT libs_to_check lib)
 
-        if(lib IN_LIST processed_libs OR lib MATCHES "^\\$" OR lib MATCHES "debug|optimized|general")
-            continue()
-        endif()
-        list(APPEND processed_libs lib)
+#         if(lib IN_LIST processed_libs OR lib MATCHES "^\\$" OR lib MATCHES "debug|optimized|general")
+#             continue()
+#         endif()
+#         list(APPEND processed_libs lib)
 
-        if(TARGET ${lib})
-            get_target_property(lib_location ${lib} LOCATION)
+#         if(TARGET ${lib})
+#             get_target_property(lib_location ${lib} LOCATION)
 
-            if(lib_location AND lib_location MATCHES "\\.dll$")
-                file(COPY ${lib_location} DESTINATION ${output_path})
-                message(STATUS "Copied DLL: ${lib_location}")
-            endif()
+#             if(lib_location AND lib_location MATCHES "\\.dll$")
+#                 file(COPY ${lib_location} DESTINATION ${output_path})
+#                 message(STATUS "Copied DLL: ${lib_location}")
+#             endif()
 
-            get_target_property(lib_deps ${lib} INTERFACE_LINK_LIBRARIES)
-            if(lib_deps)
-                list(APPEND libs_to_check ${lib_deps})
-            endif()
+#             get_target_property(lib_deps ${lib} INTERFACE_LINK_LIBRARIES)
+#             if(lib_deps)
+#                 list(APPEND libs_to_check ${lib_deps})
+#             endif()
 
-            get_target_property(lib_direct_deps ${lib} LINK_LIBRARIES)
-            if(lib_direct_deps)
-                list(APPEND libs_to_check ${lib_direct_deps})
-            endif()
-        endif()
-    endwhile()
-endfunction()
+#             get_target_property(lib_direct_deps ${lib} LINK_LIBRARIES)
+#             if(lib_direct_deps)
+#                 list(APPEND libs_to_check ${lib_direct_deps})
+#             endif()
+#         endif()
+#     endwhile()
+# endfunction()
 
-copy_opencv_dependencies(M3 ${OUTPUT_DIR})
+# copy_opencv_dependencies(M3 ${OUTPUT_DIR})
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(M3)

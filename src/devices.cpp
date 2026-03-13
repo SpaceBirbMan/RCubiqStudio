@@ -309,3 +309,4 @@ void HidDevice::readLoop() {
         emitData(buffer.data(), static_cast<size_t>(res));
     }
 }
+

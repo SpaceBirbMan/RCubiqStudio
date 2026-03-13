@@ -23,8 +23,10 @@ EngineManager::EngineManager(AppCore* acptr) {
 
     acptr->getEventManager().subscribe(name, "start_drawing_frames", &EngineManager::getActiveFrames, this);
     acptr->getEventManager().subscribe(name, "add_engines_names", &EngineManager::addNames, this);
-    acptr->getEventManager().subscribe(name, "send_texture_handlers_queue", &EngineManager::startRendering, this);
     acptr->getEventManager().subscribe(name, "send_table", &EngineManager::sendTrackerTable, this);
+    //acptr->getEventManager().subscribe(name, "send_renderer", &EngineManager::sendRenderer, this);
+    acptr->getEventManager().subscribe(name, "send_win_id", &EngineManager::sendWinId, this);
+    acptr->getEventManager().subscribe(name, "send_vp", &EngineManager::sendViewport, this);
 }
 
 void EngineManager::setFuncs(funcMap map) {
@@ -58,16 +60,19 @@ void EngineManager::initialize() {
     acptr->getEventManager().sendMessage(AppMessage(name, "build_gui", 0));
 }
 
-void EngineManager::startRendering(std::deque<std::shared_ptr<void>>* ptrs) {
-    std::cout << "Twisted Sister - We're Not Gonna Take It" << std::endl;
-    std::cout << engine << std::endl;
-    std::cout << ptrs << std::endl;
-    this->engine->setHandlersQueue(ptrs);
+void EngineManager::sendViewport(ViewportWidget* vp) {
+    this->acptr->getEventManager().getDirectSender().subscribe(this, this->viewport, &EngineManager::resize);
+    acptr->getEventManager().sendMessage(AppMessage(name, "get_rec", this));
+}
+
+void EngineManager::resize(ViewportBus b) {
+    engine->update(b);
 }
 
 void EngineManager::sendTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table) {
     EngineMeta em;
     em.table = table;
+    em.windowHandle = 0;
     this->engine->setMeta(em);
 }
 
@@ -121,8 +126,30 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
         std::cout << "this thing not gonna work u da";
     }
 
-    acptr->getEventManager().sendMessage(AppMessage(name, "get_handlers_queue", 0));
+    //acptr->getEventManager().sendMessage(AppMessage(name, "send_tick_fn", [this]() { engine->tick(); }));
+    acptr->getEventManager().sendMessage(AppMessage(name, "get_win_id", 0));
 
+}
+
+void EngineManager::sendWinId(uintptr_t id) {
+    EngineMeta b = EngineMeta();
+    b.windowHandle = id;
+    std::cout << "WHI2:" << id << std::endl;
+    std::cout << "WHI2P:" << b.windowHandle << std::endl;
+    engine->setMeta(b);
+
+    tickWrapper = [this](){engine->tick();};
+
+    acptr->getEventManager().sendMessage(AppMessage(name, "engine_ready", tickWrapper));
+}
+
+void EngineManager::sendRenderer(IRenderer* ptr) {
+    std::cout << "RENDERER_SENT\n";
+    EngineMeta em;
+    em.renderer = ptr;
+    em.table = nullptr;
+    em.windowHandle = 0;
+    this->engine->setMeta(em);
 }
 
 void EngineManager::getActiveFrames() {

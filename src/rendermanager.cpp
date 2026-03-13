@@ -7,7 +7,13 @@ RenderManager::RenderManager(AppCore* acptr) {
     core->getEventManager().subscribe(name, "set_render_api", &RenderManager::setRenderApi, this);
     core->getEventManager().subscribe(name, "resolve_render_api_respond", &RenderManager::createRenderer, this);
     core->getEventManager().subscribe(name, "pre_initialize", &RenderManager::preInitialize, this);
+    //core->getEventManager().subscribe(name, "initialize", &RenderManager::initialize, this);
 
+}
+
+
+void RenderManager::initialize() {
+    core->getEventManager().sendMessage(AppMessage(name, "set_render_api", this->renderApi));
 }
 
 void RenderManager::setRenderApi(std::string apiPath) {
@@ -16,7 +22,7 @@ void RenderManager::setRenderApi(std::string apiPath) {
     LibMeta meta;
 
     meta.path = apiPath;
-    meta.func_names.emplace_back("create_renderer");
+    meta.func_names.emplace_back("create");
     //meta.func_names.emplace_back("destroy_renderer");
 
     core->getEventManager().sendMessage(AppMessage(name, "resolve_render_api_request", meta));
@@ -53,4 +59,8 @@ void RenderManager::createRenderer(std::vector<void*> pointers) {
     }
 
     renderer->test();
+
+    std::cout << renderer << '\n';
+
+    this->core->getEventManager().sendMessage(AppMessage(name, "send_renderer", this->renderer));
 }

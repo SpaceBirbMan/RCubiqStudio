@@ -1,13 +1,12 @@
 #ifndef MISC_H
 #define MISC_H
 
-#include <set>
 #include <string>
 #include <functional>
 #include <any>
 #include <nlohmann/json.hpp>
 #include <deque>
-#include "AbstractUiNodes.h"
+#include "abstractuinodes.h"
 
 using json = nlohmann::json;
 using payload = std::vector<uint8_t>; //байт-буфер для payload
@@ -37,32 +36,43 @@ struct subStruct {
         : receiver(std::move(r)), name(std::move(m)), callback(std::move(cb)) {}
 };
 
-struct EngineMeta {
-
-    std::unordered_map<std::string, std::shared_ptr<void>>* table;
-
+struct GraphicBus {
+    std::deque<std::shared_ptr<void>> *textures_handlers_in_app = nullptr;
+    std::deque<std::shared_ptr<void>> *textures_handlers_in_engine = nullptr;
+    std::deque<std::shared_ptr<void>> *images = nullptr;
 };
 
-class IModel {
-public:
-    virtual ~IModel() = default;
-    virtual std::shared_ptr<renderQueue> acquireRenderQueue() = 0;
-    virtual std::shared_ptr<std::deque<std::any>> acquireControlQueue() = 0;
-    virtual void processControl(const std::any& cmd) = 0;
-    virtual void test() = 0;
-    virtual std::shared_ptr<std::vector<RUI::UiPage>> getUiPages() = 0;
-    virtual void setHandlersQueue(std::deque<std::shared_ptr<void>>* ptrs) = 0;
-    virtual void setMeta(EngineMeta meta) = 0;
+
+struct TextureHandle {
+    uint32_t id;
+};
+
+enum class PixelFormat : uint8_t {
+    RGBA8,
+    BGRA8,
+    R8,
+    // ...
+};
+
+struct TextureDesc {
+    uint16_t width;
+    uint16_t height;
+    uint8_t layers;
+    PixelFormat format;
+    const void* data; // только для создания, не хранится
+    uint32_t dataSize;
 };
 
 class IRenderer {
 public:
     virtual ~IRenderer() = default;
+    virtual TextureHandle createTexture(const TextureDesc* desc) = 0;
+    virtual void destroyTexture(TextureHandle handle) = 0;
+    virtual void setWindowHandle(void* handle) = 0;
+    virtual void* getNativeDevice() = 0; // для Spout2
+    virtual void frame() = 0;
     virtual void test() = 0;
 };
-
-
-
 
 struct CacheObject {
     nlohmann::json object;
@@ -101,6 +111,38 @@ public:
 
 };
 
+struct EngineMeta {
+
+    std::unordered_map<std::string, std::shared_ptr<void>>* table;
+    IRenderer* renderer;
+    uintptr_t windowHandle;
+
+};
+
+struct ViewportBus {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t x = 0;
+    uint32_t y = 0;
+    double dpr = 1.0;
+
+    bool isVisible = true;
+    //
+};
+
+class IModel {
+public:
+    virtual ~IModel() = default;
+    virtual void test() = 0;
+    virtual std::shared_ptr<std::vector<RUI::UiPage>> getUiPages() = 0;
+    virtual void setBus(GraphicBus bus) = 0;
+    virtual void setMeta(EngineMeta meta) = 0;
+    virtual void tick() = 0;
+    virtual void initRender() = 0;
+    virtual void update(ViewportBus) = 0;
+};
+
+
 using CreateEngine = IModel* (*)(void);
 using CreateRenderer = IRenderer* (*)(void);
 using CreateTracker = ITracker* (*)(void);
@@ -119,6 +161,5 @@ struct EngineFuncs {
     CreateEngine ce;
     // ...
 };
-
 
 #endif // MISC_H

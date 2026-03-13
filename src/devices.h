@@ -7,6 +7,7 @@
 #include <opencv2/opencv.hpp>
 #define MA_NO_JACK
 #include "miniaudio.h"
+#include <uiohook.h>
 
 #include <string>
 #include <mutex>
@@ -143,4 +144,82 @@ private:
     void readLoop();
 };
 
+struct HidDeviceInfo {
+    unsigned short vendor_id;
+    unsigned short product_id;
+    std::string path;
+    std::string manufacturer;
+    std::string product;
+    std::string serial;
+    int usage_page;
+    int usage;
+};
+
+class OsInputDevice : public Device {
+    std::atomic<bool> running_{false};
+    std::thread hookThread_;
+    inline static OsInputDevice* s_instance = nullptr;
+
+    static void dispatchCallback(uiohook_event* const event) {
+        auto* self = s_instance;
+        if (!self || !event) return;
+
+        if (event->type == EVENT_KEY_PRESSED || event->type == EVENT_KEY_RELEASED) {
+            uint16_t modifiers = event->mask;
+            uint16_t keycode = event->data.keyboard.keycode;
+
+            std::vector<uint8_t> packet(5);
+            packet[0] = static_cast<uint8_t>(event->type);
+            packet[1] = static_cast<uint8_t>(keycode & 0xFF);
+            packet[2] = static_cast<uint8_t>((keycode >> 8) & 0xFF);
+            packet[3] = static_cast<uint8_t>(modifiers & 0xFF);
+            packet[4] = static_cast<uint8_t>((modifiers >> 8) & 0xFF);
+
+            self->emitData(packet.data(), packet.size());
+        }
+    }
+
+    void hookLoop() {
+        // Установка коллбэка ДО запуска хука
+        hook_set_dispatch_proc(&OsInputDevice::dispatchCallback);
+
+        // hook_run() блокирующий — работает пока не вызван hook_stop()
+        hook_run();
+    }
+
+public:
+    OsInputDevice() {
+        s_instance = this;
+    }
+
+    ~OsInputDevice() override {
+        close();
+        s_instance = nullptr;
+    }
+
+    bool open() override {
+        if (running_.exchange(true)) return true;
+
+        // Запускаем поток ДО hook_run(), т.к. он блокирующий
+        hookThread_ = std::thread(&OsInputDevice::hookLoop, this);
+        return true;
+    }
+
+    void close() override {
+        if (!running_.exchange(false)) return;
+
+        // hook_stop() прервёт блокирующий hook_run() в другом потоке
+        hook_stop();
+
+        if (hookThread_.joinable()) {
+            hookThread_.join();
+        }
+    }
+
+    bool isOpen() const override { return running_.load(); }
+    std::string id() const override { return "os:keyboard"; }
+    bool sendCommand(const std::vector<uint8_t>&) override { return false; }
+};
+
+//OsInputDevice* OsInputDevice::s_instance = nullptr;
 #endif // DEVICES_H

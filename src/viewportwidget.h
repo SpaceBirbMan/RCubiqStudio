@@ -17,6 +17,7 @@
 #include "appcore.h"
 
 class ControlLayer;
+class EngineManager;
 
 class ViewportWidget : public QWidget {
     Q_OBJECT
@@ -36,28 +37,24 @@ protected:
 
 private slots:
     void paintFrame();
+    void connectToTimer(std::function<void()> fn);
 
 private:
-    void initializeBgfx();
-    void shutdownBgfx();
-    void setupTexturePipeline();
 
     AppCore* core;
     QTimer timer;
     ControlLayer* clptr = nullptr;
-    std::deque<std::shared_ptr<void>> *texture_handlers = new std::deque<std::shared_ptr<void>>(); // тут надо хранить указатели на дескрипторы текстур
+    std::function<void()> m_tickCallback;
 
-    // TODO: заменить на вектор
     std::shared_ptr<void> renderContext;
     bool m_initialized = false;
+    void* eng_receiver = nullptr;
 
     const std::string name = "ViewportWidget";
 
-    bgfx::ProgramHandle m_textureProgram = BGFX_INVALID_HANDLE;
-    bgfx::VertexBufferHandle m_vbhQuad = BGFX_INVALID_HANDLE;
-    bgfx::IndexBufferHandle m_ibhQuad = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle m_currentTexture = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle u_texColor;
+    void timerStart(std::function<void()> fn);
+    void initialize();
+    void setReceiver(EngineManager* r);
 
 };
 

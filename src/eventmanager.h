@@ -1,6 +1,7 @@
 #ifndef EVENTMANAGER_H
 #define EVENTMANAGER_H
 
+#include "directsender.h"
 #include "eventqueue.h"
 #include <vector>
 #include <functional>
@@ -8,6 +9,8 @@
 #include "misc.h"
 
 using namespace std;
+
+// TODO: Неблокирующее логгирование и система доверия (кеширование проверок)
 
 // template <typename... Args>
 // using Callback = function<void(Args... args)>;
@@ -79,17 +82,14 @@ public:
     }
 
 
-    //void unsubscribe(const ); доделать, я хз по какому признаку их удалять
+    //void unsubscribe(const ); доделать, я хз по какому признаку их удалять (да и зачем)
 
     EventQueue& getQueue(); // todo: Возможно требуется запретить запрос самой очереди
+    DirectSender& getDirectSender() { return this->directSender; }
 
     void sendMessage(AppMessage message);
 
 private:
-
-    // регистрируем модуль в формате <Сообщение, на которое отреагирую><Коллбек>
-    // Сообщения уже отправляются с данными
-    // Нужна трассировка сохранённых сообщений
 
     //std::unordered_map<std::string, std::function<void(const std::any&)>> subscribers = std::unordered_map<std::string, std::function<void(const std::any&)>>();
 
@@ -98,6 +98,7 @@ private:
     EventQueue messages = EventQueue{}; // хранит сообщения
 
     MessageProcessor processor = MessageProcessor(messages, subscribers);
+    DirectSender directSender = DirectSender();
 
     void notifyModules();
 

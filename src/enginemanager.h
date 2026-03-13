@@ -10,6 +10,7 @@
 #include "misc.h"
 
 using json = nlohmann::json;
+class ViewportWidget;
 
 class EngineManager : public ICacheable
 {
@@ -29,6 +30,8 @@ private:
     EngineFuncs currentEngineFunctions; // указывает на функцию входа в код движка (main в движке)
 
     IModel* engine;
+    std::function<void()> tickWrapper = nullptr;
+    void* viewport = nullptr;
 
     ////////////////////////////////Сериализуемые поля///////////////////////////////////
 
@@ -48,20 +51,19 @@ private:
     }
 
     void preInitialize();
-
     void initialize();
-
     void funcsTableResolvingRequest();
-
     void activateEngine(std::vector<void*> pointers);
-
     void setFuncs(funcMap map);
-
     void getActiveFrames();
-
     void addNames(std::vector<std::string> names);
-    void startRendering(std::deque<std::shared_ptr<void>>* ptrs);
+    void startRendering(GraphicBus bus);
     void sendTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table);
+    void sendRenderer(IRenderer* ptr);
+    void sendWinId(uintptr_t id);
+    void engTickWrapper();
+    void sendViewport(ViewportWidget* vp);
+    void resize(ViewportBus b);
 
 };
 

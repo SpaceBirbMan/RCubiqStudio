@@ -37,6 +37,8 @@ private:
     void setRenderApi(std::string apiPath);
     void createRenderer(std::vector<void*> pointers);
 
+    void initialize();
+
     void preInitialize() {
 
         auto deserialize_lambda = [this](const nlohmann::json& data) { this->deserializeCache(data); };
