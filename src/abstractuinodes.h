@@ -1,8 +1,8 @@
 #ifndef ABSTRACTUINODES_H
 #define ABSTRACTUINODES_H
 
-#include <algorithm>
 #include <ctime>
+#include <iostream>
 #include <string>
 #include <vector>
 #include <memory>
@@ -50,11 +50,12 @@ public:
         return message.c_str();
     }
 private:
-    std::string message;
+    std::string message;    // сообщение об ошибке
+    // нужно выводить больше служебной инфы (имя класса исключателя, время и короче т.д.)
 };
 
-inline std::string createName(const std::string& name)  {
-    return name + std::to_string(std::time(nullptr));
+inline std::string createName(const std::string name)  {
+    return name + std::to_string(std::time_t());
 }
 
 enum CompositionType {
@@ -99,55 +100,27 @@ enum TextType {
 //////////////////////////////////////////////////////////
 
 class UiElement {
+private:
+
 protected:
     std::string name;
     const std::string basic_name = "UI_element";
+
+    // единый сигнал обновления
     std::function<void()> onChange;
-    std::weak_ptr<UiElement> parent;  // weak_ptr to avoid circular references
+
+    std::shared_ptr<UiElement> parrent;
 
 public:
+
     virtual ~UiElement() = default;
-
-    UiElement() : name(createName(basic_name)) {}
-    explicit UiElement(std::string name_) : name(std::move(name_)) {}
-
-    UiElement(const UiElement& other)
-        : name(other.name), basic_name(other.basic_name), onChange(other.onChange) {
-        // parent is not copied - new element has no parent until explicitly set
-    }
-
-    UiElement(UiElement&& other) noexcept
-        : name(std::move(other.name)), basic_name(other.basic_name),
-        onChange(std::move(other.onChange)), parent(std::move(other.parent)) {
-    }
-
-    UiElement& operator=(const UiElement& other) {
-        if (this != &other) {
-            name = other.name;
-            onChange = other.onChange;
-            // parent not assigned
-        }
-        return *this;
-    }
-
-    UiElement& operator=(UiElement&& other) noexcept {
-        if (this != &other) {
-            name = std::move(other.name);
-            onChange = std::move(other.onChange);
-            parent = std::move(other.parent);
-        }
-        return *this;
-    }
 
     void resetName() {
         name = createName(basic_name);
     }
 
-    const std::string& getName() const { return name; }
-    void setOnChange(std::function<void()> cb) { onChange = std::move(cb); }
-    void setParent(std::shared_ptr<UiElement> p) { parent = p; }
-    std::shared_ptr<UiElement> getParent() const { return parent.lock(); }
 };
+
 
 //////////////////////////////////////////////////////////
 // Containers
@@ -155,385 +128,250 @@ public:
 
 class UiContainer : public UiElement {
 private:
-    const std::string basic_name = "container";
-    std::vector<std::shared_ptr<UiElement>> children;
+
+    const std::string basic_name = "сontainer"; // базовое имя элемента, не изменяется
+    std::vector<std::shared_ptr<UiElement>> childrens; // массив дочерних элементов
 
 protected:
-    CompositionType composition = VBOX;
+
+    CompositionType composition = VBOX; // способ визуального размещения элементов в контейнере
 
 public:
-    UiContainer() = default;
-    explicit UiContainer(std::string name_) : UiElement(std::move(name_)) {}
-
-    UiContainer(std::string name_, std::shared_ptr<UiElement> parent_)
-        : UiElement(std::move(name_)) {
-        if (parent_) {
-            parent = parent_;
-        }
+    /// Создаёт пустой контейнер с инициализированным по умолчанию именем элемента
+    UiContainer() {
+        resetName();
     }
 
-    UiContainer(std::shared_ptr<UiElement> parent_) : UiContainer() {
-        if (parent_) {
-            parent = parent_;
-        }
+    /// Создаёт пустой контейнер с именем name
+    UiContainer(std::string name) {
+        this->name = name;
     }
 
-    UiContainer(std::string name_, std::shared_ptr<UiElement> parent_,
-                std::vector<std::shared_ptr<UiElement>> children_, CompositionType comp)
-        : UiElement(std::move(name_)), children(std::move(children_)), composition(comp) {
-        if (parent_) {
-            parent = parent_;
-        }
+    /// Создаёт пустой контейнер с именем name и присоединяет его в элемент parent
+    UiContainer(std::string name, std::shared_ptr<UiElement> parent) {
+        this->name = name;
+        this->parrent = parrent;
     }
 
-    // Copy constructor
-    UiContainer(const UiContainer& other) : UiElement(other) {
-        composition = other.composition;
-        children.reserve(other.children.size());
-        for (const auto& child : other.children) {
-            // Shallow copy of shared_ptr - both point to same object
-            children.push_back(child);
-        }
+    /// Создаёт пустой контейнер с инициализированным по умолчанию именем элемента и присоединяет его в элемент parent
+    UiContainer(std::shared_ptr<UiElement> parent) {
+        resetName();
+        this->parrent = parrent;
     }
 
-    // Move constructor
-    UiContainer(UiContainer&& other) noexcept : UiElement(std::move(other)) {
-        composition = other.composition;
-        children = std::move(other.children);
+    UiContainer(std::string name, std::shared_ptr<UiElement> parent, std::vector<std::shared_ptr<UiElement>> childrens, CompositionType composition) {
+        this->name = name;
+        this->parrent = parrent;
+        this->childrens = childrens;
+        this->composition = composition;
     }
 
-    // Copy assignment
-    UiContainer& operator=(const UiContainer& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            composition = other.composition;
-            children = other.children;  // shallow copy
-        }
-        return *this;
+    /// Создаёт контейнер и заполняет его данными из copy (name, parrent, onChange, childrens, composition)
+    UiContainer(const UiContainer &copy) : UiContainer { copy.name, copy.parrent, copy.childrens, copy.composition} {
     }
 
-    // Move assignment
-    UiContainer& operator=(UiContainer&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            composition = other.composition;
-            children = std::move(other.children);
-        }
-        return *this;
+    /// Создаёт контейнер и заполняет его данными из moved (name, parrent, onChange, childrens, composition)
+    UiContainer(UiContainer &&moved) {
+        this->name = moved.name;
+        this->parrent = moved.parrent;
+        this->childrens = moved.childrens;
     }
 
-    void setChildren(const std::vector<std::shared_ptr<UiElement>>& ch) { children = ch; }
-    const std::vector<std::shared_ptr<UiElement>>& getChildren() const { return children; }
-    void setComposition(CompositionType comp) { composition = comp; }
-    CompositionType getComposition() const { return composition; }
+    void setChildrens(std::vector<std::shared_ptr<UiElement>> childrens) {
+        this->childrens = childrens;
+    }
 
+    const std::vector<std::shared_ptr<UiElement>>& getChildrens() const {
+        return this->childrens;
+    }
+
+    void setComposition(CompositionType composition) {
+        this->composition = composition;
+    }
+
+    CompositionType getComposition() {
+        return this->composition;
+    }
+
+    /// Добавляет в childrens элемент el
     void add(std::shared_ptr<UiElement> el) {
-        if (el) {
-            el->setParent(shared_from_this_safe());
-            children.push_back(std::move(el));
-        }
+        childrens.push_back(std::move(el));
     }
 
+    /// Добавляет в childrens несколько элементов els Использует vector для объединения элементов
     void add(const std::vector<std::shared_ptr<UiElement>>& els) {
         for (const auto& el : els) {
-            add(el);
+            childrens.push_back(el);
         }
-    }
-
-private:
-    // Helper to safely get shared_ptr from this (if class is enabled_shared_from_this)
-    std::shared_ptr<UiElement> shared_from_this_safe() {
-        // Note: UiElement should inherit from std::enable_shared_from_this<UiElement>
-        // for this to work properly. Adding minimal stub for now.
-        return nullptr; // Placeholder - implement enable_shared_from_this if needed
     }
 };
 
+// class UiGroup : public UiContainer {
+// public:
+//
+
+//     // sort type, сделать пустой метод, get|set
+// };
+
 class UiScrollBox : public UiContainer {
 private:
+
     SliderPolicy spH = IF_NEEDED;
     SliderPolicy spV = IF_NEEDED;
 
 public:
+
+    /// Создаёт пустой контейнер с скролл-барами с инициализированным по умолчанию именем элемента
     UiScrollBox() = default;
-    explicit UiScrollBox(std::string name_) : UiContainer(std::move(name_)) {}
 
-    UiScrollBox(SliderPolicy h, SliderPolicy v) : spH(h), spV(v) {}
+    // UiSliderBox(SliderPolicy spH, SliderPolicy spV) {
+    //     this->spH = spH;
+    //     this->spV = spV;
+    // }
 
-    // Copy constructor
-    UiScrollBox(const UiScrollBox& other) : UiContainer(other) {
-        spH = other.spH;
-        spV = other.spV;
+    /// Создаёт копию контейнера с скролл-барами
+    UiScrollBox(const UiScrollBox &copy) : UiContainer(copy) {
+        this->spH = copy.spH;
+        this->spV = copy.spV;
     }
 
-    // Move constructor
-    UiScrollBox(UiScrollBox&& other) noexcept : UiContainer(std::move(other)) {
-        spH = other.spH;
-        spV = other.spV;
+    /// Создаёт копию контейнера с скролл-барами, оригинал очищается
+    UiScrollBox(UiScrollBox &&moved) {
+        this->spH = moved.spH;
+        this->spV = moved.spV;
     }
 
-    // Copy assignment
-    UiScrollBox& operator=(const UiScrollBox& other) {
-        if (this != &other) {
-            UiContainer::operator=(other);
-            spH = other.spH;
-            spV = other.spV;
-        }
-        return *this;
+    void setSliderHPolicy(SliderPolicy spH) {
+        this->spH = spH;
     }
 
-    // Move assignment
-    UiScrollBox& operator=(UiScrollBox&& other) noexcept {
-        if (this != &other) {
-            UiContainer::operator=(std::move(other));
-            spH = other.spH;
-            spV = other.spV;
-        }
-        return *this;
+    void setSliderVPolicy(SliderPolicy spV) {
+        this->spV = spV;
     }
 
-    void setSliderHPolicy(SliderPolicy p) { spH = p; }
-    void setSliderVPolicy(SliderPolicy p) { spV = p; }
-    void setSlidersPolicy(SliderPolicy h, SliderPolicy v) { spH = h; spV = v; }
-    SliderPolicy getSliderHPolicy() const { return spH; }
-    SliderPolicy getSliderVPolicy() const { return spV; }
+    void setSlidersPolicy(SliderPolicy spH, SliderPolicy spV) {
+        this->spH = spH;
+        this->spV = spV;
+    }
+
+    SliderPolicy getSliderHPolicy() {
+        return spH;
+    }
+
+    SliderPolicy getSliderVPolicy() {
+        return spV;
+    }
 };
 
-// Forward declarations
-class UiPageBox;
+class UiPageBox; // forward declaration
 class UiPage;
+std::shared_ptr<UiElement> findByIndex(unsigned int index, std::vector<std::shared_ptr<UiPage>> array);
 
 class UiPageBox : public UiContainer {
+
 private:
-    std::vector<std::shared_ptr<UiPage>> pages;
+
+    std::vector<std::shared_ptr<UiPage>> childrens {};
 
 public:
-    UiPageBox() = default;
-    explicit UiPageBox(std::string name_) : UiContainer(std::move(name_)) {}
 
-    // Copy constructor
-    UiPageBox(const UiPageBox& other) : UiContainer(other) {
-        pages = other.pages;  // shallow copy of shared_ptrs
+    /// Создаёт пустой страничный контейнер с инициализированнымы по умолчанию значениями
+    UiPageBox();
+
+    /// Создаёт копию страничного контейнера copy
+    UiPageBox(const UiPageBox& copy) : UiContainer(copy) {
+        this->childrens = copy.childrens;
     }
 
-    // Move constructor
-    UiPageBox(UiPageBox&& other) noexcept : UiContainer(std::move(other)) {
-        pages = std::move(other.pages);
+    /// Создаёт копию страничного контейнера moved, moved инициализируется значениями по умолчанию
+    UiPageBox(UiPageBox&& moved) : UiContainer(moved) {
+        this->childrens = moved.childrens;
+        moved.childrens = {};
     }
 
-    // Copy assignment
-    UiPageBox& operator=(const UiPageBox& other) {
-        if (this != &other) {
-            UiContainer::operator=(other);
-            pages = other.pages;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiPageBox& operator=(UiPageBox&& other) noexcept {
-        if (this != &other) {
-            UiContainer::operator=(std::move(other));
-            pages = std::move(other.pages);
-        }
-        return *this;
-    }
-
+    /// Добавляет в childrens страницу pg
     void add(std::shared_ptr<UiPage> pg) {
-        if (pg) {
-            pages.push_back(std::move(pg));
-        }
+        childrens.push_back(std::move(pg));
     }
 
+    /// Добавляет в childrens несколько страниц pg. Использует vector для объединения элементов
     void add(const std::vector<std::shared_ptr<UiPage>>& pgs) {
         for (const auto& pg : pgs) {
-            add(pg);
+            childrens.push_back(pg);
         }
     }
 
-    const std::vector<std::shared_ptr<UiPage>>& getPages() const { return pages; }
-    std::shared_ptr<UiPage> getPageByIndex(unsigned char idx) const;
+    std::vector<std::shared_ptr<UiPage>> getChildrens() {
+        return this->childrens;
+    }
 };
-
-class UiMenuButton;
 
 class UiPage : public UiContainer {
+
 private:
+
     std::string title;
     unsigned char index = 0;
-    std::weak_ptr<UiPageBox> pageBoxParent;
+    std::shared_ptr<UiPageBox> parrent;
 
 public:
-    UiPage() { resetName(); title = name; }
-    explicit UiPage(std::string name_) : UiContainer(std::move(name_)) { title = name; }
-    UiPage(std::string name_, std::string title_) : UiContainer(std::move(name_)), title(std::move(title_)) {}
 
-    // Copy constructor
-    UiPage(const UiPage& other) : UiContainer(other), title(other.title), index(other.index) {
-        // pageBoxParent is not copied
+    /// Создаёт пустой контейнер-старницу с инициализированными по умолчанию значениями
+    UiPage() {
+        resetName();
+        title = name;
     }
 
-    // Move constructor
-    UiPage(UiPage&& other) noexcept : UiContainer(std::move(other)),
-        title(std::move(other.title)),
-        index(other.index),
-        pageBoxParent(std::move(other.pageBoxParent)) {
+    /// Создаёт копию контейнер-страницы copy
+    UiPage(const UiPage &copy) : UiContainer(copy) {
+        this->title = copy.title;
     }
 
-    // Copy assignment
-    UiPage& operator=(const UiPage& other) {
-        if (this != &other) {
-            UiContainer::operator=(other);
-            title = other.title;
-            index = other.index;
+    /// Создаёт копию контейнер-страницы moved, moved инициализируется по умолчанию
+    UiPage(UiPage &&moved) : UiContainer(moved) {
+        this->title = moved.title;
+        std::string tmp = this->name;
+        resetName();
+        moved.title = name;
+        this->name = name;
+    }
+
+    void setTitle(std::string title) {
+        this->title = title;
+    }
+
+    void setIndex(char index) {
+        if (findByIndex(index, parrent->getChildrens()) != nullptr) {
+            throw RuiException("Index already exists");
+            return;
         }
-        return *this;
+        this->index = index;
     }
 
-    // Move assignment
-    UiPage& operator=(UiPage&& other) noexcept {
-        if (this != &other) {
-            UiContainer::operator=(std::move(other));
-            title = std::move(other.title);
-            index = other.index;
-            pageBoxParent = std::move(other.pageBoxParent);
-        }
-        return *this;
+    unsigned char getIndex() {
+        return index;
     }
 
-    void setTitle(std::string t) { title = std::move(t); }
-    void setIndex(unsigned char idx) {
-        // Index validation should be done by UiPageBox, not here
-        index = idx;
+    std::string getTitle() {
+        return title;
     }
-
-    [[nodiscard]] unsigned char getIndex() const { return index; }
-    [[nodiscard]] const std::string& getTitle() const { return title; }
-    void setPageBoxParent(std::shared_ptr<UiPageBox> p) { pageBoxParent = p; }
-    std::shared_ptr<UiPageBox> getPageBoxParent() const { return pageBoxParent.lock(); }
 };
 
-inline std::shared_ptr<UiPage> UiPageBox::getPageByIndex(unsigned char idx) const {
-    for (const auto& page : pages) {
-        if (page && page->getIndex() == idx) {
-            return page;
+/// Ищет элемент по индексу index в массиве array. Предназначен для UiPageBox
+inline std::shared_ptr<UiElement> findByIndex(unsigned int index, std::vector<std::shared_ptr<UiPage>> array) {
+    for (std::shared_ptr<UiPage> element : array) {
+        if (element->getIndex() == index) {
+            return element;
         }
     }
     return nullptr;
 }
 
-class UiListView : public UiContainer {
-private:
-    std::vector<std::string> items;
-    int selectedIndex = -1;
-    std::function<void(int)> onSelect;
-
+class UiTreeView : public UiContainer {
 public:
-    UiListView() = default;
-    explicit UiListView(std::string name_) : UiContainer(std::move(name_)) {}
-
-    // Copy constructor
-    UiListView(const UiListView& other) : UiContainer(other),
-        items(other.items),
-        selectedIndex(other.selectedIndex),
-        onSelect(other.onSelect) {}
-
-    // Move constructor
-    UiListView(UiListView&& other) noexcept : UiContainer(std::move(other)),
-        items(std::move(other.items)),
-        selectedIndex(other.selectedIndex),
-        onSelect(std::move(other.onSelect)) {}
-
-    // Copy assignment
-    UiListView& operator=(const UiListView& other) {
-        if (this != &other) {
-            UiContainer::operator=(other);
-            items = other.items;
-            selectedIndex = other.selectedIndex;
-            onSelect = other.onSelect;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiListView& operator=(UiListView&& other) noexcept {
-        if (this != &other) {
-            UiContainer::operator=(std::move(other));
-            items = std::move(other.items);
-            selectedIndex = other.selectedIndex;
-            onSelect = std::move(other.onSelect);
-        }
-        return *this;
-    }
-
-    void setItems(std::vector<std::string> it) { items = std::move(it); }
-    const std::vector<std::string>& getItems() const { return items; }
-    void addItem(std::string item) { items.push_back(std::move(item)); }
-    void setSelectedIndex(int idx) {
-        if (idx >= 0 && idx < static_cast<int>(items.size())) {
-            selectedIndex = idx;
-            if (onSelect) onSelect(selectedIndex);
-        }
-    }
-    int getSelectedIndex() const { return selectedIndex; }
-    void setOnSelect(std::function<void(int)> cb) { onSelect = std::move(cb); }
-};
-
-class UiMenu : public UiElement {
-private:
-    std::vector<std::shared_ptr<UiMenuButton>> buttons;
-    std::weak_ptr<UiElement> target;
-
-public:
-    UiMenu() = default;
-
-    // FIX: Инициализация target в списке инициализации
-    explicit UiMenu(std::shared_ptr<UiElement> t, std::string name_)
-        : UiElement(std::move(name_)), target(t) {}
-
-    UiMenu(std::shared_ptr<UiElement> t, std::string name_, std::vector<std::shared_ptr<UiMenuButton>> btns)
-        : UiElement(std::move(name_)), target(t), buttons(std::move(btns)) {}
-
-    // Copy constructor
-    UiMenu(const UiMenu& other) : UiElement(other), target(other.target) {
-        buttons.reserve(other.buttons.size());
-        for (const auto& btn : other.buttons) {
-            buttons.push_back(btn);
-        }
-    }
-
-    // Move constructor
-    UiMenu(UiMenu&& other) noexcept
-        : UiElement(std::move(other)), target(std::move(other.target)), buttons(std::move(other.buttons)) {}
-
-    // Copy assignment
-    UiMenu& operator=(const UiMenu& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            target = other.target;
-            buttons = other.buttons;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiMenu& operator=(UiMenu&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            target = std::move(other.target);
-            buttons = std::move(other.buttons);
-        }
-        return *this;
-    }
-
-    void setTarget(std::shared_ptr<UiElement> t) { target = t; }
-    std::weak_ptr<UiElement> getTarget() const { return target; }
-
-    void addButton(std::shared_ptr<UiMenuButton> btn) {
-        if (btn) buttons.push_back(std::move(btn));
-    }
-
-    const std::vector<std::shared_ptr<UiMenuButton>>& getButtons() const { return buttons; }
+    // конструктор
+    // поле дерева (указатель)
+    //
 };
 
 //////////////////////////////////////////////////////////
@@ -541,138 +379,128 @@ public:
 //////////////////////////////////////////////////////////
 
 class UiTitle : public UiElement {
+
 private:
+
     std::string text;
     TextFormat format = NORMAL;
 
 public:
-    UiTitle() = default;
-    explicit UiTitle(std::string txt) : text(std::move(txt)) {}
-    UiTitle(std::string txt, TextFormat tf) : text(std::move(txt)), format(tf) {}
 
-    // Copy constructor
-    UiTitle(const UiTitle& other) : UiElement(other), text(other.text), format(other.format) {}
-
-    // Move constructor
-    UiTitle(UiTitle&& other) noexcept : UiElement(std::move(other)),
-        text(std::move(other.text)),
-        format(other.format) {}
-
-    // Copy assignment
-    UiTitle& operator=(const UiTitle& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            text = other.text;
-            format = other.format;
-        }
-        return *this;
+    UiTitle(std::string text) {
+        this->text = text;
     }
 
-    // Move assignment
-    UiTitle& operator=(UiTitle&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            text = std::move(other.text);
-            format = other.format;
-        }
-        return *this;
+    UiTitle(std::string text, TextFormat tf) {
+        this->format = tf;
+        this->text = text;
     }
 
-    void setFormat(TextFormat tf) { format = tf; }
-    void setText(std::string txt) { text = std::move(txt); }
-    [[nodiscard]] const std::string& getText() const { return text; }
-    [[nodiscard]] TextFormat getFormat() const { return format; }
+    // дописать конструкторы копирования/переноса
+
+    void setFormat(TextFormat tf) {
+        this->format = tf;
+    }
+
+    void setText(std::string text) {
+        this->text = text;
+    }
+
+    std::string getText() {
+        return text;
+    }
+
+    TextFormat getFormat() {
+        return format;
+    }
+
 };
 
+/**
+ * @brief The UiProgressBar class
+ *
+ * Пометка: ориентация прогрессбара определяется минимальным и максимальным значением. То есть можно сделать min > max и тогда он будет заполняться задом наперёд
+ */
 class UiProgressBar : public UiElement {
 private:
+
     int minValue = 0;
     int maxValue = 100;
+
     int value = 0;
+
     ProgressBarOrientation orientation = HORIZONTAL;
 
 public:
-    UiProgressBar() = default;
-    UiProgressBar(int min, int max, ProgressBarOrientation orient)
-        : minValue(min), maxValue(max), orientation(orient) {
-        if (min == max) {
-            throw RuiException("Min and Max values must be different");
-        }
-    }
 
-    // Copy constructor
-    UiProgressBar(const UiProgressBar& other) : UiElement(other),
-        minValue(other.minValue),
-        maxValue(other.maxValue),
-        value(other.value),
-        orientation(other.orientation) {}
-
-    // Move constructor
-    UiProgressBar(UiProgressBar&& other) noexcept : UiElement(std::move(other)),
-        minValue(other.minValue),
-        maxValue(other.maxValue),
-        value(other.value),
-        orientation(other.orientation) {}
-
-    // Copy assignment
-    UiProgressBar& operator=(const UiProgressBar& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            minValue = other.minValue;
-            maxValue = other.maxValue;
-            value = other.value;
-            orientation = other.orientation;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiProgressBar& operator=(UiProgressBar&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            minValue = other.minValue;
-            maxValue = other.maxValue;
-            value = other.value;
-            orientation = other.orientation;
-        }
-        return *this;
+    /**
+     * @brief UiProgressBar создаёт прогрессбар
+     * @param minValue минимальное значение
+     * @param maxValue максимальное значение
+     * @param orientation ориентация прогрессбара (вертикально или горизонтально)
+     */
+    UiProgressBar(int minValue, int maxValue, bool is_inverted, ProgressBarOrientation orientation) {
+        this->maxValue = maxValue;
+        this->minValue = minValue;
+        this->orientation = orientation;
     }
 
     void setMinValue(int v) {
-        if (v == maxValue) {
-            throw RuiException("Min and Max values must be different");
+        if (this->maxValue != v) {
+            this->minValue = v;
+        } else {
+            throw RuiException("Min and Max values is the same");
         }
-        minValue = v;
     }
 
     void setMaxValue(int v) {
-        if (v == minValue) {
-            throw RuiException("Min and Max values must be different");
+        if (this->minValue != v) {
+            this->maxValue = v;
+        } else {
+            throw RuiException("Min and Max values is the same");
         }
-        maxValue = v;
     }
 
-    void setValue(int v) { value = v; }
-    void setOrientation(ProgressBarOrientation orient) { orientation = orient; }
+    void setValue(int v) {
+        this->value = v;
+    }
 
-    [[nodiscard]] int getMinValue() const { return minValue; }
-    [[nodiscard]] int getMaxValue() const { return maxValue; }
-    [[nodiscard]] int getValue() const { return value; }
-    [[nodiscard]] ProgressBarOrientation getOrientation() const { return orientation; }
+    void setOrientation(ProgressBarOrientation orientation) {
+        this->orientation = orientation;
+    }
+
+    int getMinValue() {
+        return minValue;
+    }
+
+    int getMaxValue() {
+        return maxValue;
+    }
+
+    int getValue() {
+        return value;
+    }
+
+    ProgressBarOrientation getOrientation() {
+        return orientation;
+    }
 };
 
+// TODO: Дорефакторить
+
 class UiImageBox : public UiElement {
-public:
+private:
     std::string imagePath;
     std::shared_ptr<ImageData> idata;
     bool has_image = false;
+public:
+
 
     std::function<void(const std::string&)> onImageSet;
     std::function<void()> onImageCleared;
     std::function<void()> onRequestImage;
 
     UiImageBox() = default;
-    explicit UiImageBox(std::string name_) : UiElement(std::move(name_)) {}
 
     // Copy constructor
     UiImageBox(const UiImageBox& other) : UiElement(other),
@@ -692,35 +520,6 @@ public:
         onImageCleared(std::move(other.onImageCleared)),
         onRequestImage(std::move(other.onRequestImage)) {
         other.has_image = false;
-    }
-
-    // Copy assignment
-    UiImageBox& operator=(const UiImageBox& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            imagePath = other.imagePath;
-            idata = other.idata;
-            has_image = other.has_image;
-            onImageSet = other.onImageSet;
-            onImageCleared = other.onImageCleared;
-            onRequestImage = other.onRequestImage;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiImageBox& operator=(UiImageBox&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            imagePath = std::move(other.imagePath);
-            idata = std::move(other.idata);
-            has_image = other.has_image;
-            onImageSet = std::move(other.onImageSet);
-            onImageCleared = std::move(other.onImageCleared);
-            onRequestImage = std::move(other.onRequestImage);
-            other.has_image = false;
-        }
-        return *this;
     }
 
     std::shared_ptr<ImageData> getImageData() const { return idata; }
@@ -753,137 +552,24 @@ public:
     std::string text;
     std::function<void()> onClick;
 
-    UiButton() = default;
-    explicit UiButton(std::string name_) : UiElement(std::move(name_)) {}
-    explicit UiButton(std::string name_, std::string txt) : text(std::move(txt)), UiElement(std::move(name_)) {}
-    UiButton(std::string txt, std::function<void()> cb) : text(std::move(txt)), onClick(std::move(cb)) {}
-
-    // Copy constructor
-    UiButton(const UiButton& other) : UiElement(other), text(other.text), onClick(other.onClick) {}
-
-    // Move constructor
-    UiButton(UiButton&& other) noexcept : UiElement(std::move(other)),
-        text(std::move(other.text)),
-        onClick(std::move(other.onClick)) {}
-
-    // Copy assignment
-    UiButton& operator=(const UiButton& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            text = other.text;
-            onClick = other.onClick;
-        }
-        return *this;
+    UiButton(std::string text) {
+        this->text = text;
     }
 
-    // Move assignment
-    UiButton& operator=(UiButton&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            text = std::move(other.text);
-            onClick = std::move(other.onClick);
-        }
-        return *this;
+    UiButton(std::string text, std::function<void()> onClick) {
+        this->text = text;
+        this->onClick = onClick;
     }
-
-    void setText(std::string txt) { text = std::move(txt); }
-    [[nodiscard]] const std::string& getText() const { return text; }
-    void setOnClick(std::function<void()> cb) { onClick = std::move(cb); }
 };
 
 class UiToggleableButton : public UiButton {
 public:
     bool active = false;
     std::function<void(bool)> onToggle;
-
-    UiToggleableButton() = default;
-    using UiButton::UiButton;  // inherit constructors
-
-    // Copy constructor
-    UiToggleableButton(const UiToggleableButton& other) : UiButton(other),
-        active(other.active),
-        onToggle(other.onToggle) {}
-
-    // Move constructor
-    UiToggleableButton(UiToggleableButton&& other) noexcept : UiButton(std::move(other)),
-        active(other.active),
-        onToggle(std::move(other.onToggle)) {}
-
-    // Copy assignment
-    UiToggleableButton& operator=(const UiToggleableButton& other) {
-        if (this != &other) {
-            UiButton::operator=(other);
-            active = other.active;
-            onToggle = other.onToggle;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiToggleableButton& operator=(UiToggleableButton&& other) noexcept {
-        if (this != &other) {
-            UiButton::operator=(std::move(other));
-            active = other.active;
-            onToggle = std::move(other.onToggle);
-        }
-        return *this;
-    }
-
-    void toggle() {
-        active = !active;
-        if (onToggle) onToggle(active);
-    }
 };
 
 class UiCheckBox : public UiToggleableButton {
 public:
-    using UiToggleableButton::UiToggleableButton;
-};
-
-class UiMenuButton : public UiElement {
-private:
-    std::string title;
-    std::function<void()> callback;
-
-public:
-    UiMenuButton() = default;
-    UiMenuButton(std::string title_, std::function<void()> cb)
-        : title(std::move(title_)), callback(std::move(cb)) {}
-
-    // Copy constructor
-    UiMenuButton(const UiMenuButton& other) : UiElement(other),
-        title(other.title),
-        callback(other.callback) {}
-
-    // Move constructor
-    UiMenuButton(UiMenuButton&& other) noexcept : UiElement(std::move(other)),
-        title(std::move(other.title)),
-        callback(std::move(other.callback)) {}
-
-    // Copy assignment
-    UiMenuButton& operator=(const UiMenuButton& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            title = other.title;
-            callback = other.callback;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiMenuButton& operator=(UiMenuButton&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            title = std::move(other.title);
-            callback = std::move(other.callback);
-        }
-        return *this;
-    }
-
-    void setTitle(std::string t) { title = std::move(t); }
-    [[nodiscard]] const std::string& getTitle() const { return title; }
-    void setCallback(std::function<void()> cb) { callback = std::move(cb); }
-    void trigger() { if (callback) callback(); }
 };
 
 //////////////////////////////////////////////////////////
@@ -891,74 +577,36 @@ public:
 //////////////////////////////////////////////////////////
 
 class UiSlider : public UiElement {
+
 private:
+
     int minValue = 0;
     int maxValue = 100;
     int value = 0;
 
 public:
-    bool isPercentMode = false;
+
+    bool isPercentMode = false; // |--○--- 5%| ???
     std::function<void(int)> onSlide;
 
-    UiSlider() = default;
-    UiSlider(int min, int max) : minValue(min), maxValue(max) {}
-
-    // Copy constructor
-    UiSlider(const UiSlider& other) : UiElement(other),
-        minValue(other.minValue),
-        maxValue(other.maxValue),
-        value(other.value),
-        isPercentMode(other.isPercentMode),
-        onSlide(other.onSlide) {}
-
-    // Move constructor
-    UiSlider(UiSlider&& other) noexcept : UiElement(std::move(other)),
-        minValue(other.minValue),
-        maxValue(other.maxValue),
-        value(other.value),
-        isPercentMode(other.isPercentMode),
-        onSlide(std::move(other.onSlide)) {}
-
-    // Copy assignment
-    UiSlider& operator=(const UiSlider& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            minValue = other.minValue;
-            maxValue = other.maxValue;
-            value = other.value;
-            isPercentMode = other.isPercentMode;
-            onSlide = other.onSlide;
-        }
-        return *this;
+    int getMinValue() {
+        return minValue;
     }
 
-    // Move assignment
-    UiSlider& operator=(UiSlider&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            minValue = other.minValue;
-            maxValue = other.maxValue;
-            value = other.value;
-            isPercentMode = other.isPercentMode;
-            onSlide = std::move(other.onSlide);
-        }
-        return *this;
+    int getMaxValue() {
+        return maxValue;
     }
 
-    [[nodiscard]] int getMinValue() const { return minValue; }
-    [[nodiscard]] int getMaxValue() const { return maxValue; }
-    [[nodiscard]] int getValue() const { return value; }
-
-    void setValue(int v) {
-        value = std::clamp(v, minValue, maxValue);
-        if (onSlide) onSlide(value);
+    int getValue() {
+        return value;
     }
 };
 
 class UiDial : public UiSlider {
 public:
     bool isFloat = false;
-    using UiSlider::UiSlider;
+
+
 };
 
 class UiComboBox : public UiElement {
@@ -966,113 +614,17 @@ public:
     std::vector<std::string> items;
     int currentIndex = 0;
     ItemType type = TEXT;
+
     std::function<void(int)> onSelect;
-
-    UiComboBox() = default;
-    explicit UiComboBox(std::string name_) : UiElement(std::move(name_)) {}
-
-    // Copy constructor
-    UiComboBox(const UiComboBox& other) : UiElement(other),
-        items(other.items),
-        currentIndex(other.currentIndex),
-        type(other.type),
-        onSelect(other.onSelect) {}
-
-    // Move constructor
-    UiComboBox(UiComboBox&& other) noexcept : UiElement(std::move(other)),
-        items(std::move(other.items)),
-        currentIndex(other.currentIndex),
-        type(other.type),
-        onSelect(std::move(other.onSelect)) {}
-
-    // Copy assignment
-    UiComboBox& operator=(const UiComboBox& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            items = other.items;
-            currentIndex = other.currentIndex;
-            type = other.type;
-            onSelect = other.onSelect;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiComboBox& operator=(UiComboBox&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            items = std::move(other.items);
-            currentIndex = other.currentIndex;
-            type = other.type;
-            onSelect = std::move(other.onSelect);
-        }
-        return *this;
-    }
-
-    void setItems(std::vector<std::string> it) { items = std::move(it); }
-    void addItem(std::string item) { items.push_back(std::move(item)); }
-    void setSelectedIndex(int idx) {
-        if (idx >= 0 && idx < static_cast<int>(items.size())) {
-            currentIndex = idx;
-            if (onSelect) onSelect(currentIndex);
-        }
-    }
-    [[nodiscard]] int getSelectedIndex() const { return currentIndex; }
 };
 
 class UiInputField : public UiElement {
 public:
     std::string hint;
     std::string value;
-    TextType inputType = STRING;
+    RUI::TextType inputType = STRING;
+
     std::function<void(const std::string&)> onTextChanged;
-
-    UiInputField() = default;
-    explicit UiInputField(std::string name_) : UiElement(std::move(name_)) {}
-
-    // Copy constructor
-    UiInputField(const UiInputField& other) : UiElement(other),
-        hint(other.hint),
-        value(other.value),
-        inputType(other.inputType),
-        onTextChanged(other.onTextChanged) {}
-
-    // Move constructor
-    UiInputField(UiInputField&& other) noexcept : UiElement(std::move(other)),
-        hint(std::move(other.hint)),
-        value(std::move(other.value)),
-        inputType(other.inputType),
-        onTextChanged(std::move(other.onTextChanged)) {}
-
-    // Copy assignment
-    UiInputField& operator=(const UiInputField& other) {
-        if (this != &other) {
-            UiElement::operator=(other);
-            hint = other.hint;
-            value = other.value;
-            inputType = other.inputType;
-            onTextChanged = other.onTextChanged;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiInputField& operator=(UiInputField&& other) noexcept {
-        if (this != &other) {
-            UiElement::operator=(std::move(other));
-            hint = std::move(other.hint);
-            value = std::move(other.value);
-            inputType = other.inputType;
-            onTextChanged = std::move(other.onTextChanged);
-        }
-        return *this;
-    }
-
-    void setValue(std::string v) {
-        value = std::move(v);
-        if (onTextChanged) onTextChanged(value);
-    }
-    [[nodiscard]] const std::string& getValue() const { return value; }
 };
 
 class UiSpinField : public UiInputField {
@@ -1080,190 +632,21 @@ public:
     int minValue = 0;
     int maxValue = 100;
     int intValue = 0;
+
     bool isFloat = false;
     bool negativable = false;
+
     std::function<void(int)> onValueChanged;
-
-    UiSpinField() = default;
-    using UiInputField::UiInputField;
-
-    // Copy constructor
-    UiSpinField(const UiSpinField& other) : UiInputField(other),
-        minValue(other.minValue),
-        maxValue(other.maxValue),
-        intValue(other.intValue),
-        isFloat(other.isFloat),
-        negativable(other.negativable),
-        onValueChanged(other.onValueChanged) {}
-
-    // Move constructor
-    UiSpinField(UiSpinField&& other) noexcept : UiInputField(std::move(other)),
-        minValue(other.minValue),
-        maxValue(other.maxValue),
-        intValue(other.intValue),
-        isFloat(other.isFloat),
-        negativable(other.negativable),
-        onValueChanged(std::move(other.onValueChanged)) {}
-
-    // Copy assignment
-    UiSpinField& operator=(const UiSpinField& other) {
-        if (this != &other) {
-            UiInputField::operator=(other);
-            minValue = other.minValue;
-            maxValue = other.maxValue;
-            intValue = other.intValue;
-            isFloat = other.isFloat;
-            negativable = other.negativable;
-            onValueChanged = other.onValueChanged;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    UiSpinField& operator=(UiSpinField&& other) noexcept {
-        if (this != &other) {
-            UiInputField::operator=(std::move(other));
-            minValue = other.minValue;
-            maxValue = other.maxValue;
-            intValue = other.intValue;
-            isFloat = other.isFloat;
-            negativable = other.negativable;
-            onValueChanged = std::move(other.onValueChanged);
-        }
-        return *this;
-    }
-
-    void setIntValue(int v) {
-        intValue = std::clamp(v, minValue, maxValue);
-        if (onValueChanged) onValueChanged(intValue);
-    }
 };
+
+// todo: inputbox для файлов, пружинки для более точного позиционирования (v, h) [el1] |////13px////| [el2]
 
 //////////////////////////////////////////////////////////
-// Windows
-//////////////////////////////////////////////////////////
 
-class Window {
-protected:
-    std::string title;
-    void* winId = nullptr;
-    int width = 0;
-    int height = 0;
-    bool isModal = false;
 
-public:
-    Window() = default;
-    Window(std::string title_, void* id, int w, int h, bool modal)
-        : title(std::move(title_)), winId(id), width(w), height(h), isModal(modal) {}
+// todo: Мб стоит подумать о вариантах передаваемых функций, как это сделано в
+//       блоке маршрутизации сообщений
 
-    // Copy constructor
-    Window(const Window& other)
-        : title(other.title), winId(other.winId),
-        width(other.width), height(other.height), isModal(other.isModal) {}
-
-    // Move constructor
-    Window(Window&& other) noexcept
-        : title(std::move(other.title)), winId(other.winId),
-        width(other.width), height(other.height), isModal(other.isModal) {
-        other.winId = nullptr;
-    }
-
-    // Copy assignment
-    Window& operator=(const Window& other) {
-        if (this != &other) {
-            title = other.title;
-            winId = other.winId;
-            width = other.width;
-            height = other.height;
-            isModal = other.isModal;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    Window& operator=(Window&& other) noexcept {
-        if (this != &other) {
-            title = std::move(other.title);
-            winId = other.winId;
-            width = other.width;
-            height = other.height;
-            isModal = other.isModal;
-            other.winId = nullptr;
-        }
-        return *this;
-    }
-
-    virtual ~Window() = default;
-
-    [[nodiscard]] const std::string& getTitle() const { return title; }
-    [[nodiscard]] void* getWinId() const { return winId; }
-    [[nodiscard]] int getWidth() const { return width; }
-    [[nodiscard]] int getHeight() const { return height; }
-    [[nodiscard]] bool isModalWindow() const { return isModal; }
-
-    void setTitle(std::string t) { title = std::move(t); }
-    void setWinId(void* id) { winId = id; }
-    void setSize(int w, int h) { width = w; height = h; }
-    void setModal(bool modal) { isModal = modal; }
-
-    // Windows are typically shown via methods, not stored in UI tree
-    virtual void show() = 0;
-    virtual void hide() = 0;
-};
-
-class LoadWindow : public Window {
-private:
-    std::function<void(std::vector<std::string>)> onSubmit;
-
-public:
-    LoadWindow() = default;
-    LoadWindow(std::string title_, void* id, int w, int h, bool modal,
-               std::function<void(std::vector<std::string>)> cb)
-        : Window(std::move(title_), id, w, h, modal), onSubmit(std::move(cb)) {}
-
-    // Copy constructor
-    LoadWindow(const LoadWindow& other) : Window(other), onSubmit(other.onSubmit) {}
-
-    // Move constructor
-    LoadWindow(LoadWindow&& other) noexcept : Window(std::move(other)),
-        onSubmit(std::move(other.onSubmit)) {}
-
-    // Copy assignment
-    LoadWindow& operator=(const LoadWindow& other) {
-        if (this != &other) {
-            Window::operator=(other);
-            onSubmit = other.onSubmit;
-        }
-        return *this;
-    }
-
-    // Move assignment
-    LoadWindow& operator=(LoadWindow&& other) noexcept {
-        if (this != &other) {
-            Window::operator=(std::move(other));
-            onSubmit = std::move(other.onSubmit);
-        }
-        return *this;
-    }
-
-    void show() override {
-        // Platform-specific implementation would go here
-        // For abstraction, this is a placeholder
-    }
-
-    void hide() override {
-        // Platform-specific implementation
-    }
-
-    void triggerSubmit(const std::vector<std::string>& data) {
-        if (onSubmit) onSubmit(data);
-    }
-
-    void setOnSubmit(std::function<void(std::vector<std::string>)> cb) {
-        onSubmit = std::move(cb);
-    }
-};
-
-} // namespace RUI
+} // ns:RUI
 
 #endif // ABSTRACTUINODES_H

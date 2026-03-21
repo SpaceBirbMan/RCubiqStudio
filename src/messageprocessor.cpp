@@ -23,9 +23,9 @@ void MessageProcessor::process() {
                         // TODO: Походу придётся всё приводить к типу bool callback(std::any) и сваливать приведение на коллбеки
                         sstr.callback(msg.getData());
                     }
-                    catch (...) {
-                        std::cerr << "unknown exception in callback '"
-                                  << sstr.name << "'" << std::endl;
+                    catch (const std::exception& e) {
+                        std::cerr << "Exception in callback '"
+                                  << sstr.name << "' " << e.what() << std::endl;
                     }
                     std::cout << "[RECEIVER] " << sstr.receiver << std::endl;
                 }

@@ -115,10 +115,9 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
 
     engine->test();
     try {
-        shared_ptr<std::vector<RUI::UiPage>> rp2 = engine->getUiPages();
-        vector<RUI::UiPage> rp = *rp2;
+        std::shared_ptr<std::vector<RUI::UiPage>> rp2 = engine->getUiPages();
 
-        std::cout << rp.size() << std::endl;
+        std::cout << rp2->size() << std::endl;
 
         acptr->getEventManager().sendMessage(AppMessage(name, "init_ui_eng", rp2));
 

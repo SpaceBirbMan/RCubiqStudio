@@ -145,17 +145,17 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
         return box;
     }
 
-    if (auto* m = dynamic_cast<UiMenu*>(elem)) {
-        return renderMenu(m);
-    }
+    // if (auto* m = dynamic_cast<UiMenu*>(elem)) {
+    //     return renderMenu(m);
+    // }
 
     // if (auto* tv = dynamic_cast<UiTreeView*>(elem)) {
     //     return renderTree(tv);
     // }
 
-    if (auto* lv = dynamic_cast<UiListView*>(elem)) {
-        return renderList(lv);
-    }
+    // if (auto* lv = dynamic_cast<UiListView*>(elem)) {
+    //     return renderList(lv);
+    // }
 
     return new QWidget;
 }
@@ -164,40 +164,40 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
 //  ListView rendering
 ///////////////////////////////////////////////////////////////
 
-QWidget* UiRenderer::renderList(UiListView* list) {
-    if (!list) return nullptr;
+// QWidget* UiRenderer::renderList(UiListView* list) {
+//     if (!list) return nullptr;
 
-    auto* widget = new QWidget;
-    auto* layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(0, 0, 0, 0);
+//     auto* widget = new QWidget;
+//     auto* layout = new QVBoxLayout(widget);
+//     layout->setContentsMargins(0, 0, 0, 0);
 
-    auto* listView = new QListView;
-    auto* model = new QStandardItemModel(listView);
+//     auto* listView = new QListView;
+//     auto* model = new QStandardItemModel(listView);
 
-    for (const auto& item : list->getItems()) {
-        model->appendRow(new QStandardItem(QString::fromStdString(item)));
-    }
+//     for (const auto& item : list->getItems()) {
+//         model->appendRow(new QStandardItem(QString::fromStdString(item)));
+//     }
 
-    listView->setModel(model);
-    listView->setSelectionMode(QAbstractItemView::SingleSelection);
+//     listView->setModel(model);
+//     listView->setSelectionMode(QAbstractItemView::SingleSelection);
 
-    if (list->getSelectedIndex() >= 0) {
-        auto index = model->index(list->getSelectedIndex(), 0);
-        listView->setCurrentIndex(index);
-    }
+//     if (list->getSelectedIndex() >= 0) {
+//         auto index = model->index(list->getSelectedIndex(), 0);
+//         listView->setCurrentIndex(index);
+//     }
 
-    // if (auto cb = list->getSelectedIndex()) {
-    //     QObject::connect(listView->selectionModel(), &QItemSelectionModel::currentRowChanged,
-    //                      [cb, model](const QModelIndex& current, const QModelIndex&) {
-    //                          if (current.isValid()) {
-    //                              cb(current.row());
-    //                          }
-    //                      });
-    // }
+//     // if (auto cb = list->getSelectedIndex()) {
+//     //     QObject::connect(listView->selectionModel(), &QItemSelectionModel::currentRowChanged,
+//     //                      [cb, model](const QModelIndex& current, const QModelIndex&) {
+//     //                          if (current.isValid()) {
+//     //                              cb(current.row());
+//     //                          }
+//     //                      });
+//     // }
 
-    layout->addWidget(listView);
-    return widget;
-}
+//     layout->addWidget(listView);
+//     return widget;
+// }
 
 ///////////////////////////////////////////////////////////////
 //  TreeView rendering (stub - requires UiTreeView implementation)
@@ -232,8 +232,8 @@ QWidget* UiRenderer::renderImageBox(UiImageBox* imgBox) {
     btn->setStyleSheet("QPushButton { border: 1px dashed gray; }");
 
     auto updateButton = [btn, imgBox]() {
-        if (imgBox->hasImage() && !imgBox->imagePath.empty()) {
-            QPixmap pixmap(QString::fromStdString(imgBox->imagePath));
+        if (imgBox->hasImage() && !imgBox->getPath().empty()) {
+            QPixmap pixmap(QString::fromStdString(imgBox->getPath()));
             if (!pixmap.isNull()) {
                 btn->setIcon(QIcon(pixmap));
                 btn->setIconSize(pixmap.size().scaled(btn->size() - QSize(10, 10), Qt::KeepAspectRatio));
@@ -302,7 +302,7 @@ QWidget* UiRenderer::renderContainer(UiContainer* container) {
 
     w->setLayout(lay);
 
-    for (const auto& ch : container->getChildren()) {
+    for (const auto& ch : container->getChildrens()) {
         QWidget* child = renderElement(ch.get());
         if (child) lay->addWidget(child);
     }
@@ -323,40 +323,40 @@ QWidget* UiRenderer::renderPage(UiPage* page) {
 //  Menu rendering
 ///////////////////////////////////////////////////////////////
 
-QWidget* UiRenderer::renderMenu(UiMenu* menu) {
-    if (!menu) return nullptr;
+// QWidget* UiRenderer::renderMenu(UiMenu* menu) {
+//     if (!menu) return nullptr;
 
-    // Создаем само Qt-меню
-    auto* qMenu = new QMenu();
+//     // Создаем само Qt-меню
+//     auto* qMenu = new QMenu();
 
-    // // Заполняем действиями
-    // for (const auto& btnPtr : menu->getButtons()) {
-    //     if (btnPtr) {
-    //         // Предполагаем, что у UiMenuButton есть метод getTitle() и onClick() или подобный
-    //         // Если UiMenuButton наследуется от UiButton, используем его текст и клик
-    //         std::string title = btnPtr->getTitle(); // Или btnPtr->text, если публичное поле
+//     // // Заполняем действиями
+//     // for (const auto& btnPtr : menu->getButtons()) {
+//     //     if (btnPtr) {
+//     //         // Предполагаем, что у UiMenuButton есть метод getTitle() и onClick() или подобный
+//     //         // Если UiMenuButton наследуется от UiButton, используем его текст и клик
+//     //         std::string title = btnPtr->getTitle(); // Или btnPtr->text, если публичное поле
 
-    //         auto* action = qMenu->addAction(QString::fromStdString(title));
+//     //         auto* action = qMenu->addAction(QString::fromStdString(title));
 
-    //         // FIX: Подключение сигнала
-    //         // Предположим, у UiMenuButton есть метод trigger() или callback onClick
-    //         // Если UiMenuButton имеет структуру как UiButton:
-    //         if (btnPtr->onClick) {
-    //             QObject::connect(action, &QAction::triggered, [cb = btnPtr->onClick]() {
-    //                 cb();
-    //             });
-    //         }
-    //     }
-    // }
+//     //         // FIX: Подключение сигнала
+//     //         // Предположим, у UiMenuButton есть метод trigger() или callback onClick
+//     //         // Если UiMenuButton имеет структуру как UiButton:
+//     //         if (btnPtr->onClick) {
+//     //             QObject::connect(action, &QAction::triggered, [cb = btnPtr->onClick]() {
+//     //                 cb();
+//     //             });
+//     //         }
+//     //     }
+//     // }
 
-    auto* triggerBtn = new QPushButton("Menu");
-    QObject::connect(triggerBtn, &QPushButton::clicked, [triggerBtn, qMenu]() {
-        qMenu->popup(triggerBtn->mapToGlobal(QPoint(0, triggerBtn->height())));
-    });
+//     auto* triggerBtn = new QPushButton("Menu");
+//     QObject::connect(triggerBtn, &QPushButton::clicked, [triggerBtn, qMenu]() {
+//         qMenu->popup(triggerBtn->mapToGlobal(QPoint(0, triggerBtn->height())));
+//     });
 
-    // FIXME: не вешается на виджет
-    return triggerBtn;
-}
+//     // FIXME: не вешается на виджет
+//     return triggerBtn;
+// }
 ///////////////////////////////////////////////////////////////
 //  Root renderer into QTabWidget
 ///////////////////////////////////////////////////////////////

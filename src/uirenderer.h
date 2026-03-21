@@ -35,8 +35,8 @@ public:
     static QWidget* renderContainer(UiContainer* container);
     static QWidget* renderPage(UiPage* page);
     static QWidget* renderImageBox(UiImageBox* imgBox);
-    static QWidget* renderList(UiListView* list);
-    static QWidget* renderMenu(UiMenu* menu);
+    // static QWidget* renderList(UiListView* list);
+    // static QWidget* renderMenu(UiMenu* menu);
 
     static void renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget);
     static void renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget);
