@@ -1,3 +1,3 @@
 *README*
 
-![RCubiqLogo](RCubiQ Logo Hat.png)
+![RCubiQ Logo Hat.png](https://github.com/SpaceBirbMan/RCubiqStudio.git/RCubiQ Logo Hat.png)
