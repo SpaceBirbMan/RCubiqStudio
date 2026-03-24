@@ -20,7 +20,7 @@ private:
 
     std::string name = "TrackerManager";
 
-    ITracker* tracker;
+    ITracker* tracker; // а зачем второй указатель?
 
     AppCore* core = nullptr;
 

@@ -15,6 +15,8 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
+class TrackerRenderer;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -25,6 +27,7 @@ public:
 
 private:
     Ui::MainWindow *ui;
+    TrackerRenderer *trackerRenderer;
     AppCore* core;
     std::string name = "UI";
 

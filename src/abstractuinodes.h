@@ -2,7 +2,6 @@
 #define ABSTRACTUINODES_H
 
 #include <ctime>
-#include <iostream>
 #include <string>
 #include <vector>
 #include <memory>
@@ -106,12 +105,12 @@ protected:
     std::string name;
     const std::string basic_name = "UI_element";
 
-    // единый сигнал обновления
-    std::function<void()> onChange;
-
     std::shared_ptr<UiElement> parrent;
 
 public:
+    std::function<void()> onChange; // Made public for dynamic UI updating
+    std::string getName() const { return name; }
+    void setName(const std::string& newName) { name = newName; }
 
     virtual ~UiElement() = default;
 
@@ -367,12 +366,7 @@ inline std::shared_ptr<UiElement> findByIndex(unsigned int index, std::vector<st
     return nullptr;
 }
 
-class UiTreeView : public UiContainer {
-public:
-    // конструктор
-    // поле дерева (указатель)
-    //
-};
+
 
 //////////////////////////////////////////////////////////
 // Display elements
@@ -589,6 +583,10 @@ public:
     bool isPercentMode = false; // |--○--- 5%| ???
     std::function<void(int)> onSlide;
 
+    void setMinValue(int val) { minValue = val; }
+    void setMaxValue(int val) { maxValue = val; }
+    void setValue(int val) { value = val; if(onChange) onChange(); }
+
     int getMinValue() {
         return minValue;
     }
@@ -643,6 +641,73 @@ public:
 
 //////////////////////////////////////////////////////////
 
+class UiTreeNode : public UiElement {
+public:
+    std::string text;
+    std::vector<std::shared_ptr<UiTreeNode>> children;
+    std::function<void()> onSelect;
+
+    UiTreeNode(std::string text) : text(std::move(text)) { resetName(); }
+    void add(std::shared_ptr<UiTreeNode> node) { children.push_back(node); }
+};
+
+class UiTreeView : public UiElement {
+public:
+    std::vector<std::shared_ptr<UiTreeNode>> rootNodes;
+    std::function<void(std::string)> onNodeSelected;
+    
+    void add(std::shared_ptr<UiTreeNode> node) { rootNodes.push_back(node); }
+};
+
+class UiListView : public UiElement {
+public:
+    std::vector<std::string> items;
+    int selectedIndex = -1;
+    std::function<void(int)> onSelect;
+};
+
+struct GridItem {
+    std::string text;
+    std::string imagePath;
+};
+
+class UiGridView : public UiElement {
+public:
+    std::vector<GridItem> items;
+    std::function<void(int)> onSelect;
+};
+
+class UiWindow : public UiContainer {
+public:
+    std::string windowTitle;
+    bool isVisible = false;
+    std::function<void()> onClose;
+
+    UiWindow(std::string title) : windowTitle(std::move(title)) { resetName(); }
+    // Invoke window show/hide dynamically
+    void showWindow() { isVisible = true; if(onChange) onChange(); }
+    void hideWindow() { isVisible = false; if(onChange) onChange(); }
+};
+
+class UiFileDialog : public UiElement {
+public:
+    std::string filter = "All Files (*.*)";
+    std::string title = "Select File";
+    std::function<void(const std::string&)> onFileSelected;
+};
+
+class UiMenuButton : public UiButton {
+public:
+    UiMenuButton(std::string text, std::function<void()> onClick = nullptr) : UiButton(text, onClick) { resetName(); }
+};
+
+class UiContextMenu : public UiContainer {
+public:
+    std::shared_ptr<UiElement> target;
+
+    UiContextMenu(std::shared_ptr<UiElement> targetElem = nullptr) : target(targetElem) { resetName(); }
+    void setTarget(std::shared_ptr<UiElement> targetElem) { target = targetElem; }
+};
 
 // todo: Мб стоит подумать о вариантах передаваемых функций, как это сделано в
 //       блоке маршрутизации сообщений

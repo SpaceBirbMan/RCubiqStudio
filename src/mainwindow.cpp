@@ -6,6 +6,7 @@
 #include "viewportwidget.h"
 #include "devices.h"
 #include "uirenderer.h"
+#include "trackerrenderer.h"
 #include <QDebug>
 #include <QTimer>
 #include <qobjectdefs.h>
@@ -52,6 +53,12 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     ui->gridLayout_2->replaceWidget(ui->viewport, vw);
     delete ui->viewport;
     ui->viewport = vw;
+
+    trackerRenderer = new TrackerRenderer(this);
+    trackerRenderer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    ui->verticalLayout_4->replaceWidget(ui->faceDotsViewport, trackerRenderer);
+    delete ui->faceDotsViewport;
+    ui->faceDotsViewport = trackerRenderer;
 
     QVBoxLayout *layout = new QVBoxLayout(ui->frameForFace);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -278,6 +285,28 @@ void MainWindow::updateTrackerTable() {
 
     tbl->setUpdatesEnabled(wasUpdatesEnabled);
     tbl->blockSignals(false);
+
+    // Extract points
+    std::vector<QPointF> points;
+    if (_trackerTableCache) {
+        int i = 0;
+        while (true) {
+            auto itX = _trackerTableCache->find("lm_" + std::to_string(i) + "_x");
+            auto itY = _trackerTableCache->find("lm_" + std::to_string(i) + "_y");
+            if (itX != _trackerTableCache->end() && itY != _trackerTableCache->end()) {
+                float x = *reinterpret_cast<float*>(itX->second.get());
+                float y = *reinterpret_cast<float*>(itY->second.get());
+                points.push_back(QPointF(x, y));
+                i++;
+            } else {
+                break;
+            }
+        }
+    }
+    
+    if (trackerRenderer) {
+        trackerRenderer->setPoints(points);
+    }
 }
 
 
