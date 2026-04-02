@@ -64,6 +64,7 @@ private:
     void engTickWrapper();
     void sendViewport(ViewportWidget* vp);
     void resize(ViewportBus b);
+    void sendDataBus(IDataBus* dbp);
 
 };
 

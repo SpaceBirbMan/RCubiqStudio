@@ -14,7 +14,7 @@
 
 // TODO: Сделать обновление при переподключении
 template<typename T>
-class DataBus {
+class DeviceDataBus {
 private:
     mutable std::mutex mtx;
     std::queue<T> data;
@@ -65,7 +65,7 @@ public:
     bool openDevice(const std::string& id);
     void closeDevice(const std::string& id);
 
-    bool bindToDeviceDataBus(const std::string& id, DataBus<std::vector<uint8_t>>* bus);
+    bool bindToDeviceDataBus(const std::string& id, DeviceDataBus<std::vector<uint8_t>>* bus);
     bool bindToDeviceDataCallback(const std::string& id, DataCallback callback);
     void unbindDeviceData(const std::string& id);
     bool sendDataToDevice(const std::string& id, const std::vector<uint8_t>& data);
@@ -86,7 +86,7 @@ private:
     void startHid();
     void stopHid();
 
-    std::unordered_map<std::string, DataBus<std::vector<uint8_t>>*> deviceDataBuses_;
+    std::unordered_map<std::string, DeviceDataBus<std::vector<uint8_t>>*> deviceDataBuses_;
     std::unordered_map<std::string, DataCallback> deviceCallbacks_;
     std::thread hidThread_;
     std::atomic<bool> hidRunning_{false};

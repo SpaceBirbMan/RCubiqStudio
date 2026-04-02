@@ -12,6 +12,7 @@
 #include <qobjectdefs.h>
 #include <qthread.h>
 #include <QMetaObject>
+#include <QLabel>
 
 using namespace RUI;
 
@@ -32,6 +33,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     core->getEventManager().subscribe(name, "active_camera_info", &MainWindow::setActiveCamera, this);
     core->getEventManager().subscribe(name, "active_camera_device", &MainWindow::startCamera, this);
     core->getEventManager().subscribe(name, "send_table", &MainWindow::initTrackerTable, this);
+    core->getEventManager().subscribe(name, "plugin_started", &MainWindow::uiAddPlugin, this);
     //core->getEventManager().subscribe("send_frame_queue", &MainWindow::connectFramesToViewport, this);
     core->getEventManager().subscribe("update_engines_combo", &MainWindow::updateEnginesCombo, this);
     core->getEventManager().subscribe("update_trackers_combo", &MainWindow::updateTrackersCombo, this);
@@ -47,6 +49,14 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     connect(ui->addTrackerButton, &QPushButton::clicked, this, &MainWindow::addTrackers);
     connect(ui->startTracker, &QPushButton::clicked, this, &MainWindow::startTracker);
     connect(ui->stopTracker, &QPushButton::clicked, this, &MainWindow::stopTracker);
+    connect(ui->addPlugin, &QPushButton::clicked, this, &MainWindow::addPlugin);
+    connect(ui->deletePlugin, &QPushButton::clicked, this, &MainWindow::removePlugin);
+
+    while (ui->pluginsToolBox->count() > 0) {
+        QWidget *widget = ui->pluginsToolBox->widget(0);
+        ui->pluginsToolBox->removeItem(0);
+        delete widget;
+    }
 
     ViewportWidget* vw = new ViewportWidget(core, this);
 
@@ -80,6 +90,51 @@ MainWindow::~MainWindow()
 
 void MainWindow::initialize() {
     core->getEventManager().sendMessage(AppMessage(name, "get_video_devices_request", 0));
+}
+
+void MainWindow::addPlugin() {
+
+    QWidget* parentWidget = ui->centralwidget;
+
+    std::vector<std::string> paths {};
+
+    QStringList names = QFileDialog::getOpenFileNames(
+        parentWidget,
+        "Выберите файл плагина",
+        QDir::homePath(),
+        "Файлы плагинов (*.ofp);;Все файлы (*)"
+        );
+
+    for (QString& name : names) {
+        paths.emplace_back(name.toStdString());
+    }
+
+    if (!paths.empty()) {
+        core->getEventManager().sendMessage(AppMessage(name, "add_plugins_to_registry", paths));
+    }
+}
+
+void MainWindow::removePlugin() {
+    // сообщение об удалении
+}
+
+void MainWindow::uiAddPlugin(std::string name) {
+    if (QThread::currentThread() != qApp->thread()) {
+        qDebug() << "[THREAD] Wrong thread! Re-invoking via QueuedConnection with Lambda...";
+
+        QMetaObject::invokeMethod(this, [this, name]() {
+            this->uiAddPlugin(name);
+        }, Qt::QueuedConnection);
+        return;
+    }
+    QWidget *widget = new QWidget;
+    QVBoxLayout *layout = new QVBoxLayout(widget);
+    layout->addWidget(new QLabel(QString::fromStdString(name)));
+    ui->pluginsToolBox->addItem(widget, QString::fromStdString(name));
+}
+
+void MainWindow::uiRemovePlugin() {
+
 }
 
 void MainWindow::setVideoDevices(std::vector<CameraInfo> cameras) {
@@ -232,7 +287,6 @@ void MainWindow::updateTrackerTable() {
 
                 if (val > 0.0) {
                     valueStr = QString::number(val, 'f', 6);
-                    hasData = true;
                 } else {
                     valueStr = "-";
                 }
@@ -242,7 +296,6 @@ void MainWindow::updateTrackerTable() {
 
                 if (val >= 0) {
                     valueStr = QString::number(val);
-                    hasData = true;
                 } else {
                     valueStr = "-";
                 }
@@ -250,7 +303,6 @@ void MainWindow::updateTrackerTable() {
             else if (paramName == "success") {
                 bool val = *reinterpret_cast<bool*>(rawPtr);
                 valueStr = val ? "true" : "false";
-                hasData = true;
             }
             else {
                 float val = *reinterpret_cast<float*>(rawPtr);
@@ -258,12 +310,10 @@ void MainWindow::updateTrackerTable() {
 
                 if (std::isnan(val) || std::isinf(val)) {
                     valueStr = "NaN";
-                    hasData = true;
                 }
 
                 else {
                     valueStr = QString::number(val, 'f', 5);
-                    hasData = true;
                 }
             }
         } catch (...) {

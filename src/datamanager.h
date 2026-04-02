@@ -9,7 +9,6 @@
 #include "dynamiclibrary.h"
 #include <any>
 #include <vector>
-#include <set>
 #include "misc.h"
 #include <unordered_map>
 
@@ -26,8 +25,6 @@ public:
     const std::string name = "DataManager"; // имя модуля, используется в методах с описанием отправителя/получаетля
 
 private:
-
-
 
     AppCore* appCorePtr = nullptr; // ядро
 
@@ -47,6 +44,7 @@ private:
     void saveFiles(std::any data);
     void resolveApi(LibMeta meta);
     void resolveTracker(Meta meta);
+    void resolvePlugin(Meta meta);
 
 };
 

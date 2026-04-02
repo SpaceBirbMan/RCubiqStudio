@@ -69,7 +69,6 @@ public:
     virtual TextureHandle createTexture(const TextureDesc* desc) = 0;
     virtual void destroyTexture(TextureHandle handle) = 0;
     virtual void setWindowHandle(void* handle) = 0;
-    virtual void* getNativeDevice() = 0; // для Spout2
     virtual void frame() = 0;
     virtual void test() = 0;
 };
@@ -101,14 +100,24 @@ struct TrackerInfo {
 
 };
 
+#include "ieventmanager.h"
+
+class IDataBus {
+public:
+    virtual void registerData(const std::string& key, std::any data) = 0;
+    virtual std::any& getData(const std::string& key) = 0;
+    virtual void remove(const std::string& key) = 0;
+};
+
 class ITracker {
 public:
+    ITracker() = default;
+    ITracker(IEventManager* eventManager, IDataBus* dataBus) {}
     virtual ~ITracker() = default;
     virtual bool start() = 0;
     virtual void stop() = 0;
     virtual bool isRunning() const = 0;
     virtual std::unordered_map<std::string, std::shared_ptr<void>>* getTable() const = 0;
-
 };
 
 struct EngineMeta {
@@ -127,25 +136,35 @@ struct ViewportBus {
     double dpr = 1.0;
 
     bool isVisible = true;
-    //
 };
 
 class IModel {
 public:
+    IModel() = default;
+    IModel(IEventManager* eventManager, IDataBus* dbus) {}
     virtual ~IModel() = default;
     virtual void test() = 0;
     virtual std::shared_ptr<std::vector<RUI::UiPage>> getUiPages() = 0;
-    virtual void setBus(GraphicBus bus) = 0;
+    virtual void setDataBus(IDataBus* db) = 0;
     virtual void setMeta(EngineMeta meta) = 0;
     virtual void tick() = 0;
     virtual void initRender() = 0;
     virtual void update(ViewportBus) = 0;
 };
 
+class IGenPlugin {
+public:
+    IGenPlugin() = default;
+    IGenPlugin(IEventManager* eventManager, IDataBus* dataBus) {}
+    virtual ~IGenPlugin() = default;
+    virtual void setDataBus(IDataBus* db) = 0;
+    virtual std::string getName() = 0;
+};
 
-using CreateEngine = IModel* (*)(void);
+using CreateEngine = IModel* (*)(IEventManager*, IDataBus*);
 using CreateRenderer = IRenderer* (*)(void);
-using CreateTracker = ITracker* (*)(void);
+using CreateTracker = ITracker* (*)(IEventManager*, IDataBus*);
+using CreatePlugin = IGenPlugin* (*)(IEventManager*, IDataBus*);
 
 struct LibMeta {
     std::string path;

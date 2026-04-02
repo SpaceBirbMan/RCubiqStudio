@@ -14,7 +14,7 @@ EngineManager::EngineManager(AppCore* acptr) {
     // ответ на инициализацию
     acptr->getEventManager().subscribe(name, "initialize", &EngineManager::initialize, this);
     acptr->getEventManager().subscribe(name, "pre_initialize", &EngineManager::preInitialize, this);
-    acptr->getEventManager().subscribe(name, "askToReady", &EngineManager::preInitialize, this);
+    //acptr->getEventManager().subscribe(name, "askToReady", &EngineManager::preInitialize, this);
     // ответ на возврат ссылок плагина
     acptr->getEventManager().subscribe(name, "engine_resolving_respond", &EngineManager::activateEngine, this);
     // acptr->getEventManager().subscribe("general_init_ok", &EngineManager::activateEngine, this);
@@ -27,6 +27,7 @@ EngineManager::EngineManager(AppCore* acptr) {
     //acptr->getEventManager().subscribe(name, "send_renderer", &EngineManager::sendRenderer, this);
     acptr->getEventManager().subscribe(name, "send_win_id", &EngineManager::sendWinId, this);
     acptr->getEventManager().subscribe(name, "send_vp", &EngineManager::sendViewport, this);
+    acptr->getEventManager().subscribe(name, "send_dbus_e" , &EngineManager::sendDataBus, this);
 }
 
 void EngineManager::setFuncs(funcMap map) {
@@ -57,6 +58,7 @@ void EngineManager::initialize() {
         tmp_names.emplace_back(name);
     }
     acptr->getEventManager().sendMessage(AppMessage(name, "add_engines_names", tmp_names));
+    acptr->getEventManager().sendMessage(AppMessage(name, "module_initialized", name));
     acptr->getEventManager().sendMessage(AppMessage(name, "build_gui", 0));
 }
 
@@ -70,10 +72,18 @@ void EngineManager::resize(ViewportBus b) {
 }
 
 void EngineManager::sendTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table) {
-    EngineMeta em;
-    em.table = table;
-    em.windowHandle = 0;
-    this->engine->setMeta(em);
+    if (engine) {
+        EngineMeta em;
+        em.table = table;
+        em.windowHandle = 0;
+        this->engine->setMeta(em);
+    }
+}
+
+void EngineManager::sendDataBus(IDataBus* dbp) {
+    if (this->engine) {
+        engine->setDataBus(dbp);
+    }
 }
 
 /**
@@ -107,7 +117,7 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
         return;
     }
 
-    engine = ce();
+    engine = ce(&(acptr->getEventManager()), acptr->getEventManager().getBusPtr());
     if (!engine) {
         std::cerr << "Engine creation failed";
         return;

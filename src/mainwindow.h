@@ -52,6 +52,8 @@ private:
     void updateTrackersCombo(const std::set<std::string> &names);
     void initTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table);
     void updateTrackerTable();
+    void uiAddPlugin(std::string name);
+    void uiRemovePlugin();
 
     QTimer* _updateTimer;
     std::unordered_map<std::string, std::shared_ptr<void>> *_trackerTableCache;
@@ -68,5 +70,7 @@ private slots:
     void addTrackers();
     void startTracker();
     void stopTracker();
+    void addPlugin();
+    void removePlugin();
 };
 #endif // MAINWINDOW_H

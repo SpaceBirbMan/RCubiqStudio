@@ -36,6 +36,7 @@ void TrackerManager::initialize() {
         tmp_names.emplace_back(name);
     }
     core->getEventManager().sendMessage(AppMessage(name, "add_trackers_names", tmp_names));
+    core->getEventManager().sendMessage(AppMessage(name, "module_initialized", name));
 }
 
 void TrackerManager::preInitialize() {
@@ -94,7 +95,7 @@ void TrackerManager::activateTracker(std::vector<void*> pointers) {
         return;
     }
 
-    tracker = c();
+    tracker = c(&(core->getEventManager()), core->getEventManager().getBusPtr());
     if (!tracker) {
         std::cerr << "Tracker creation failed";
         return;

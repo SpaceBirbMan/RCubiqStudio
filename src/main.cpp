@@ -4,6 +4,7 @@
 #include "rendermanager.h"
 #include "devicemanager.h"
 #include "trackermanager.h"
+#include "otherplugins.h"
 
 #include <QApplication>
 #include <QLocale>
@@ -47,16 +48,20 @@ int main(int argc, char *argv[])
     AppCore *core = new AppCore;
 
     DataManager *dtm = new DataManager(core);
-    EngineManager *egm = new EngineManager(core);
+
+    EngineManager *egm = new EngineManager(core);  // нужно будет поправить порядок создания модулей
     MainWindow mainWindow(nullptr, core);
+
     RenderManager *renm = new RenderManager(core);
     DeviceManager *dvm = new DeviceManager(core);
     TrackerManager *tkm = new TrackerManager(core);
+    OtherPlugins *op = new OtherPlugins(core); // <-- должен создаваться последним
 
     // core->registerModule(dtm->name);
     core->registerModule(egm->name);
-    core->registerModule(renm->cacheKey());
+    //core->registerModule(renm->cacheKey());
     core->registerModule(tkm->cacheKey());
+    core->registerModule(op->cacheKey());
 
     core->getEventManager().sendMessage(AppMessage("main", "askToPreInit", 0)); // вместо нуля можно аргументы
 #ifndef QML

@@ -68,7 +68,6 @@ target_include_directories(miniaudio INTERFACE ${CMAKE_SOURCE_DIR}/../miniaudio-
 find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui)
 pkg_check_modules(HIDAPI REQUIRED IMPORTED_TARGET hidapi)
 pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
-pkg_check_modules(SERIALPORT REQUIRED libserialport)
 
 target_include_directories(M3 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 
@@ -86,31 +85,6 @@ set_target_properties(uiohook PROPERTIES IMPORTED_IMPLIB
     "${UIOHOOK_DIR}/libuiohook/include" )
 target_link_libraries(M3 PRIVATE uiohook)
 
-set(SPOUT_DIR "${CMAKE_SOURCE_DIR}/../spout2")
-set(SPOUT_LIB_DIR "${SPOUT_DIR}/INSTALL/lib")
-set(SPOUT_BIN_DIR "${SPOUT_DIR}/INSTALL/bin")
-
-target_include_directories(M3 PRIVATE
-    "${SPOUT_DIR}/INSTALL/include"
-)
-
-set(SPOUT_LIBS
-    "${SPOUT_LIB_DIR}/libSpoutDX.dll.a"
-    "${SPOUT_LIB_DIR}/libSpoutDX12.dll.a"
-    "${SPOUT_LIB_DIR}/libSpoutDX9.dll.a"
-    "${SPOUT_LIB_DIR}/libSpout.dll.a"
-    "${SPOUT_LIB_DIR}/libSpoutLibrary.dll.a"
-)
-target_compile_definitions(M3 PRIVATE
-    USE_SPOUT_DX
-    USE_SPOUT_DX12
-    USE_SPOUT_DX9
-    USE_SPOUT_GL
-    USE_SPOUT_LIBRARY
-)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE ${SPOUT_LIBS})
-
 add_compile_definitions(BX_CONFIG_DEBUG=1)
 
 message(STATUS "OpenCV libs: ${OpenCV_LIBS}")
@@ -126,7 +100,6 @@ target_link_libraries(
     bx
     bimg
     miniaudio
-    serialport
     PkgConfig::HIDAPI
     PkgConfig::LIBUSB
     ${OpenCV_LIBS}
@@ -149,12 +122,9 @@ file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
 
 set(COMPILED_SHADERS "")
 
-if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(SHADER_RENDERER "glsl")
-    set(SHADER_PROFILE "440")
-elseif(WIN32)
-    set(SHADER_RENDERER "dx12")
-    set(SHADER_PROFILE "s_6_9")
+if(WIN32)
+    set(SHADER_RENDERER "hlsl")
+    set(SHADER_PROFILE "s_5_0")
 elseif(APPLE)
     set(SHADER_RENDERER "metal")
     set(SHADER_PROFILE "metal31-14")

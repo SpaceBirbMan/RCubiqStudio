@@ -32,6 +32,7 @@ ViewportWidget::ViewportWidget(AppCore* core, QWidget* parent)
     core->getEventManager().subscribe(name, "engine_ready", &ViewportWidget::connectToTimer, this);
     core->getEventManager().subscribe(name, "get_win_id", &ViewportWidget::initialize, this);
     core->getEventManager().subscribe(name, "get_rec", &ViewportWidget::setReceiver, this);
+    core->getEventManager().getBusPtr()->registerData("window_handle", winId());
 }
 
 void ViewportWidget::initialize() {
@@ -45,7 +46,19 @@ void ViewportWidget::connectToTimer(std::function<void()> fn) {
             return;
         }
 
-        m_tickCallback = fn;
+        // тут надо вызывать по очереди коллбеки из вектора
+        auto a_ren_pip = &core->getEventManager().getBusPtr()->getData("render_pipeline");
+        this->ren_pip_ptr = std::any_cast<std::vector<std::function<void()>>>(a_ren_pip);
+
+        m_tickCallback = [this]() {
+            if (this->ren_pip_ptr) {
+                for (auto& func : *this->ren_pip_ptr) {
+                    if (func) {
+                        func();
+                    }
+                }
+            }
+        };
         if (!timer.isActive()) {
             timer.start(16);
         }

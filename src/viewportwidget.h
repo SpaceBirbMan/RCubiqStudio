@@ -45,6 +45,7 @@ private:
     QTimer timer;
     ControlLayer* clptr = nullptr;
     std::function<void()> m_tickCallback;
+    std::vector<std::function<void()>>* ren_pip_ptr;
 
     std::shared_ptr<void> renderContext;
     bool m_initialized = false;

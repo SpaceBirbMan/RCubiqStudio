@@ -399,7 +399,7 @@ void DeviceManager::closeDevice(const std::string &id)
     }
 }
 
-bool DeviceManager::bindToDeviceDataBus(const std::string &id, DataBus<std::vector<uint8_t>> *bus)
+bool DeviceManager::bindToDeviceDataBus(const std::string &id, DeviceDataBus<std::vector<uint8_t>> *bus)
 {
     if (!bus)
         return false;

@@ -26,6 +26,10 @@ private:
 
     std::vector<std::string> modules {};
     std::vector<string> readyModules {};
+    std::vector<string> initReadyModules {};
+
+    bool complition_flag = false;
+    bool pre_init_flag = false;
 
     EventQueue *eQueuePointer = nullptr;
 
@@ -37,8 +41,10 @@ private:
 
     void startInitialization();
     void discardStartUp();
-
+    void sendDataBusE();
+    void sendDataBusP();
     void addToReady(std::string name);
+    void addToInitReady(std::string name);
 
     void askToPreInit() {
         eventManager.sendMessage(AppMessage(name, "pre_initialize", 0));
