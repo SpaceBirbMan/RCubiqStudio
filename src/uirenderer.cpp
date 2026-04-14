@@ -6,6 +6,9 @@
 #include <QListWidget>
 #include <QDialog>
 #include <QStringListModel>
+#include <QPainter>
+#include <QTimer>
+#include <QMouseEvent>
 
 ///////////////////////////////////////////////////////////////
 //  helpers
@@ -40,6 +43,7 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
     else if (auto* tree = dynamic_cast<UiTreeView*>(elem)) result = renderTreeView(tree);
     else if (auto* list = dynamic_cast<UiListView*>(elem)) result = renderListView(list);
     else if (auto* grid = dynamic_cast<UiGridView*>(elem)) result = renderGridView(grid);
+    else if (auto* canvas = dynamic_cast<UiCanvas*>(elem)) result = renderCanvas(canvas);
     else if (auto* c = dynamic_cast<UiContainer*>(elem)) result = renderContainer(c);
     else if (auto* t = dynamic_cast<UiTitle*>(elem)) {
         auto* l = new QLabel(QString::fromStdString(t->getText()));
@@ -575,6 +579,111 @@ QWidget* UiRenderer::renderFileDialog(UiFileDialog* fd) {
     fd->onChange = [bPtr, fd]() { if(bPtr) bPtr->setText(QString::fromStdString(fd->title)); };
     return btn;
 }
+
+///////////////////////////////////////////////////////////////
+//  Canvas rendering
+///////////////////////////////////////////////////////////////
+
+class QtCanvasWidget : public QWidget {
+    UiCanvas* canvasNode;
+    QTimer* timer;
+public:
+    QtCanvasWidget(UiCanvas* node, QWidget* parent = nullptr) : QWidget(parent), canvasNode(node) {
+        setMinimumSize(320, 240);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        setMouseTracking(true); // Enable mouse move events without clicking
+        
+        // Setup a timer to constantly repaint the canvas
+        timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, this, [this]() {
+            this->update();
+        });
+        timer->start(33); // ~30 fps
+    }
+
+protected:
+    QPoint m_mousePos = QPoint(-1, -1);
+
+    void mouseMoveEvent(QMouseEvent* event) override {
+        m_mousePos = event->pos();
+        update();
+    }
+
+    void leaveEvent(QEvent* event) override {
+        m_mousePos = QPoint(-1, -1);
+        update();
+    }
+
+    void paintEvent(QPaintEvent* event) override {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.fillRect(rect(), Qt::black);
+
+        if (!canvasNode) return;
+        
+        std::lock_guard<std::mutex> lock(*(canvasNode->pointsMutex));
+
+        if (canvasNode->points.empty()) return;
+
+        // Auto-scale to fit
+        float minX = std::numeric_limits<float>::max();
+        float maxX = std::numeric_limits<float>::lowest();
+        float minY = std::numeric_limits<float>::max();
+        float maxY = std::numeric_limits<float>::lowest();
+
+        for (const auto& pt : canvasNode->points) {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+        }
+
+        float rangeX = std::max(1.0f, maxX - minX);
+        float rangeY = std::max(1.0f, maxY - minY);
+
+        float margin = 20.0f;
+        float drawW = width() - margin * 2;
+        float drawH = height() - margin * 2;
+
+        for (const auto& pt : canvasNode->points) {
+            float nx = (pt.x - minX) / rangeX;
+            float ny = (pt.y - minY) / rangeY;
+
+            int px = static_cast<int>(margin + nx * drawW);
+            int py = static_cast<int>(margin + ny * drawH);
+
+            QColor color(
+                (pt.color >> 24) & 0xFF,
+                (pt.color >> 16) & 0xFF,
+                (pt.color >> 8) & 0xFF,
+                pt.color & 0xFF
+            );
+            
+            bool isHovered = (std::abs(px - m_mousePos.x()) <= 6 && std::abs(py - m_mousePos.y()) <= 6);
+            
+            if (isHovered) {
+                painter.setBrush(Qt::yellow);
+                painter.setPen(Qt::NoPen);
+                painter.drawEllipse(QPoint(px, py), static_cast<int>(pt.size) + 2, static_cast<int>(pt.size) + 2);
+                
+                if (!pt.label.empty()) {
+                    painter.setPen(Qt::white);
+                    painter.drawText(px + pt.size + 4, py + pt.size + 4, QString::fromStdString(pt.label));
+                }
+            } else {
+                painter.setBrush(color);
+                painter.setPen(Qt::NoPen);
+                painter.drawEllipse(QPoint(px, py), static_cast<int>(pt.size), static_cast<int>(pt.size));
+            }
+        }
+    }
+};
+
+QWidget* UiRenderer::renderCanvas(UiCanvas* canvas) {
+    if (!canvas) return nullptr;
+    return new QtCanvasWidget(canvas);
+}
+
 ///////////////////////////////////////////////////////////////
 //  Root renderer into QTabWidget
 ///////////////////////////////////////////////////////////////

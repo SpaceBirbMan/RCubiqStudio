@@ -38,6 +38,7 @@ private:
     void showCacheErrorMessage();
     void setControlsTable(std::unordered_map<std::string, std::string> table);
     void initDynamicUi(shared_ptr<std::vector<RUI::UiPage>> pages);
+    void initTrackerDynamicUi(std::unordered_map<std::string, RUI::UiPage>* pages);
     void connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr);
     void addEngineFile();
     void switchActiveEngine(const QString& engine);

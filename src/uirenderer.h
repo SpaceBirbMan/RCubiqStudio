@@ -41,6 +41,7 @@ public:
     static QWidget* renderWindow(UiWindow* win);
     static QWidget* renderFileDialog(UiFileDialog* fd);
     static QWidget* renderContextMenu(UiContextMenu* ctx);
+    static QWidget* renderCanvas(UiCanvas* canvas);
 
     static void renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget);
     static void renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget);

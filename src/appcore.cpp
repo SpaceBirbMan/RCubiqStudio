@@ -14,6 +14,8 @@ AppCore::AppCore() : eventManager() {
 
     this->eventManager.getBusPtr()->registerData("render_pipeline", std::vector<function<void()>> {}); // а может быть такие зарезервированные штуки стоит в enum поместить?
     this->eventManager.getBusPtr()->registerData("control_table", std::unordered_map<std::string, std::shared_ptr<void>> {});
+    this->eventManager.getBusPtr()->registerData("engines_gui_pages", std::unordered_map<std::string, RUI::UiPage> {});
+    this->eventManager.getBusPtr()->registerData("trakers_gui_pages", std::unordered_map<std::string, RUI::UiPage> {});
 }
 
 void AppCore::startInitialization() {

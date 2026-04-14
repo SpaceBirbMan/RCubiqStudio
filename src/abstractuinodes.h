@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <mutex>
 
 // TODO: Возможна ли тут система координат?
 
@@ -535,6 +536,24 @@ public:
 
     [[nodiscard]] const std::string& getPath() const { return imagePath; }
     [[nodiscard]] bool hasImage() const { return has_image; }
+};
+
+class UiCanvas : public UiElement {
+public:
+    struct Point {
+        float x;
+        float y;
+        uint32_t color = 0xFFFFFFFF; // RGBA format
+        float size = 2.0f;
+        std::string label;
+    };
+
+    std::vector<Point> points;
+    std::shared_ptr<std::mutex> pointsMutex = std::make_shared<std::mutex>();
+    std::function<void()> onCanvasUpdate;
+    
+    // Default constructor
+    UiCanvas() { resetName(); }
 };
 
 //////////////////////////////////////////////////////////

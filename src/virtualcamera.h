@@ -2,7 +2,7 @@
 // #define VIRTUALCAMERA_H
 
 // #include <cstdint>
-// #include <windows.h>
+// #include <windows.h> lean and mean и что-то ещё надо
 // #include <string>
 
 // class VirtualCamera

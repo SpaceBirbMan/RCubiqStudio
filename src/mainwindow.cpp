@@ -28,6 +28,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     core->getEventManager().subscribe("cache_err", &MainWindow::showCacheErrorMessage, this);
     core->getEventManager().subscribe("send_control_table", &MainWindow::setControlsTable, this);
     core->getEventManager().subscribe("init_ui_eng", &MainWindow::initDynamicUi, this);
+    core->getEventManager().subscribe<std::unordered_map<std::string, RUI::UiPage>*>("init_ui_tracker", &MainWindow::initTrackerDynamicUi, this);
     core->getEventManager().subscribe("initialize", &MainWindow::initialize, this);
     core->getEventManager().subscribe(name, "get_video_devices_respond", &MainWindow::setVideoDevices, this);
     core->getEventManager().subscribe(name, "active_camera_info", &MainWindow::setActiveCamera, this);
@@ -376,6 +377,15 @@ void MainWindow::initDynamicUi(shared_ptr<std::vector<RUI::UiPage>> pages) {
     QMetaObject::invokeMethod(this, [this, pages]() { // это нужно из-за того, что рендер может вызываться не из ui-потока qt
         for (UiPage root : *pages) {
             UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(root), ui->leftPanel);
+        }
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::initTrackerDynamicUi(std::unordered_map<std::string, RUI::UiPage>* pages) {
+    if (!pages) return;
+    QMetaObject::invokeMethod(this, [this, pages]() {
+        for (const auto& [name, page] : *pages) {
+            UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(page), ui->rightPanel);
         }
     }, Qt::QueuedConnection);
 }
