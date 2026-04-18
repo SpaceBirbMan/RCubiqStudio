@@ -10,6 +10,8 @@
 
 // TODO: Возможна ли тут система координат?
 
+#ifndef IMAGEDATA_DEFINED
+#define IMAGEDATA_DEFINED
 struct ImageData {
     uint32_t* pixels = nullptr;  // RGBA8, владелец обязан освободить через delete[]
     uint16_t width = 0;
@@ -37,6 +39,8 @@ struct ImageData {
     }
     ~ImageData() { delete[] pixels; }
 };
+#endif // IMAGEDATA_DEFINED
+
 
 namespace RUI {
 
@@ -150,13 +154,13 @@ public:
     /// Создаёт пустой контейнер с именем name и присоединяет его в элемент parent
     UiContainer(std::string name, std::shared_ptr<UiElement> parent) {
         this->name = name;
-        this->parrent = parrent;
+        this->parrent = parent;
     }
 
     /// Создаёт пустой контейнер с инициализированным по умолчанию именем элемента и присоединяет его в элемент parent
     UiContainer(std::shared_ptr<UiElement> parent) {
         resetName();
-        this->parrent = parrent;
+        this->parrent = parent;
     }
 
     UiContainer(std::string name, std::shared_ptr<UiElement> parent, std::vector<std::shared_ptr<UiElement>> childrens, CompositionType composition) {
@@ -168,13 +172,15 @@ public:
 
     /// Создаёт контейнер и заполняет его данными из copy (name, parrent, onChange, childrens, composition)
     UiContainer(const UiContainer &copy) : UiContainer { copy.name, copy.parrent, copy.childrens, copy.composition} {
+        this->onChange = copy.onChange;
     }
 
     /// Создаёт контейнер и заполняет его данными из moved (name, parrent, onChange, childrens, composition)
-    UiContainer(UiContainer &&moved) {
-        this->name = moved.name;
-        this->parrent = moved.parrent;
-        this->childrens = moved.childrens;
+    UiContainer(UiContainer &&moved) noexcept {
+        this->name = std::move(moved.name);
+        this->parrent = std::move(moved.parrent);
+        this->childrens = std::move(moved.childrens);
+        this->onChange = std::move(moved.onChange);
     }
 
     void setChildrens(std::vector<std::shared_ptr<UiElement>> childrens) {
@@ -328,12 +334,8 @@ public:
     }
 
     /// Создаёт копию контейнер-страницы moved, moved инициализируется по умолчанию
-    UiPage(UiPage &&moved) : UiContainer(moved) {
-        this->title = moved.title;
-        std::string tmp = this->name;
-        resetName();
-        moved.title = name;
-        this->name = name;
+    UiPage(UiPage &&moved) noexcept : UiContainer(std::move(moved)) {
+        this->title = std::move(moved.title);
     }
 
     void setTitle(std::string title) {

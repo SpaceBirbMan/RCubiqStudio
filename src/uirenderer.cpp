@@ -9,6 +9,7 @@
 #include <QPainter>
 #include <QTimer>
 #include <QMouseEvent>
+#include <QScrollArea>
 
 ///////////////////////////////////////////////////////////////
 //  helpers
@@ -44,6 +45,7 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
     else if (auto* list = dynamic_cast<UiListView*>(elem)) result = renderListView(list);
     else if (auto* grid = dynamic_cast<UiGridView*>(elem)) result = renderGridView(grid);
     else if (auto* canvas = dynamic_cast<UiCanvas*>(elem)) result = renderCanvas(canvas);
+    else if (auto* scroll = dynamic_cast<UiScrollBox*>(elem)) result = renderScrollBox(scroll);
     else if (auto* c = dynamic_cast<UiContainer*>(elem)) result = renderContainer(c);
     else if (auto* t = dynamic_cast<UiTitle*>(elem)) {
         auto* l = new QLabel(QString::fromStdString(t->getText()));
@@ -365,6 +367,70 @@ QWidget* UiRenderer::renderContainer(UiContainer* container) {
     };
 
     return w;
+}
+
+QWidget* UiRenderer::renderScrollBox(UiScrollBox* scroll) {
+    if (!scroll) return nullptr;
+
+    auto* sa = new QScrollArea;
+    sa->setWidgetResizable(true);
+    sa->setFrameShape(QFrame::NoFrame);
+
+    auto mapPolicy = [](SliderPolicy p) {
+        if (p == ALWAYS) return Qt::ScrollBarAlwaysOn;
+        if (p == NEVER) return Qt::ScrollBarAlwaysOff;
+        return Qt::ScrollBarAsNeeded;
+    };
+
+    sa->setHorizontalScrollBarPolicy(mapPolicy(scroll->getSliderHPolicy()));
+    sa->setVerticalScrollBarPolicy(mapPolicy(scroll->getSliderVPolicy()));
+
+    auto* content = new QWidget;
+    auto* lay = makeLayout(scroll->getComposition());
+    content->setLayout(lay);
+
+    for (const auto& ch : scroll->getChildrens()) {
+        QWidget* child = renderElement(ch.get());
+        if (child) lay->addWidget(child);
+    }
+    
+    if (scroll->getComposition() != FREE) {
+        lay->addStretch();
+    }
+
+    sa->setWidget(content);
+
+    QPointer<QScrollArea> saPtr = sa;
+    QPointer<QWidget> cPtr = content;
+    QPointer<QBoxLayout> layPtr = lay;
+
+    scroll->onChange = [saPtr, cPtr, layPtr, scroll]() {
+        if (saPtr && cPtr && layPtr) {
+            QLayoutItem* item;
+            while ((item = layPtr->takeAt(0)) != nullptr) {
+                if (item->widget()) item->widget()->deleteLater();
+                delete item;
+            }
+            for (const auto& ch : scroll->getChildrens()) {
+                QWidget* child = renderElement(ch.get());
+                if (child) layPtr->addWidget(child);
+            }
+            if (scroll->getComposition() != FREE) {
+                layPtr->addStretch();
+            }
+            
+            // Re-apply policies in case they changed
+            auto mapP = [](SliderPolicy p) {
+                if (p == ALWAYS) return Qt::ScrollBarAlwaysOn;
+                if (p == NEVER) return Qt::ScrollBarAlwaysOff;
+                return Qt::ScrollBarAsNeeded;
+            };
+            saPtr->setHorizontalScrollBarPolicy(mapP(scroll->getSliderHPolicy()));
+            saPtr->setVerticalScrollBarPolicy(mapP(scroll->getSliderVPolicy()));
+        }
+    };
+
+    return sa;
 }
 
 QWidget* UiRenderer::renderPage(UiPage* page) {

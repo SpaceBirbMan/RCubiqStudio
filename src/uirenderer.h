@@ -33,6 +33,7 @@ class UiRenderer {
 public:
     static QWidget* renderElement(UiElement* elem);
     static QWidget* renderContainer(UiContainer* container);
+    static QWidget* renderScrollBox(UiScrollBox* scroll);
     static QWidget* renderPage(UiPage* page);
     static QWidget* renderImageBox(UiImageBox* imgBox);
     static QWidget* renderTreeView(UiTreeView* tree);
