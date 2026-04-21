@@ -17,6 +17,7 @@ DataManager::DataManager(AppCore* acptr) {
     acptr->getEventManager().subscribe(name, "resolve_render_api_request", &DataManager::resolveApi, this);
     acptr->getEventManager().subscribe(name, "tracking_resolving_request", &DataManager::resolveTracker, this);
     acptr->getEventManager().subscribe(name, "plugin_resolving_request", &DataManager::resolvePlugin, this);
+    acptr->getEventManager().subscribe(name, "unload_library", &DataManager::unloadLibrary, this);
 
 }
 
@@ -136,4 +137,14 @@ void DataManager::resolvePlugin(Meta meta) {
     appCorePtr->getEventManager().sendMessage(
         AppMessage(name, "plugin_resolving_respond", ptrs)
         );
+}
+
+void DataManager::unloadLibrary(std::string path) {
+    auto it = libsPool.find(path);
+    if (it != libsPool.end()) {
+        libsPool.erase(it);
+        std::cout << "[DataManager] Library unloaded: " << path << std::endl;
+    } else {
+        std::cerr << "[DataManager] unloadLibrary: path not found in pool: " << path << std::endl;
+    }
 }

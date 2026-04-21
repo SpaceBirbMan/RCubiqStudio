@@ -4,7 +4,6 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include "viewportwidget.h"
-#include "devices.h"
 #include "uirenderer.h"
 #include "trackerrenderer.h"
 #include <QDebug>
@@ -13,6 +12,10 @@
 #include <qthread.h>
 #include <QMetaObject>
 #include <QLabel>
+#include <QVBoxLayout>
+#include <QMenu>
+#include <QCursor>
+#include <QPalette>
 
 using namespace RUI;
 
@@ -24,61 +27,53 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     ui->setupUi(this);
 
     _updateTimer = nullptr;
+    _trackerTableCache = nullptr;
+    trackerRenderer = nullptr;
 
+    // Event subscriptions
     core->getEventManager().subscribe("cache_err", &MainWindow::showCacheErrorMessage, this);
     core->getEventManager().subscribe("send_control_table", &MainWindow::setControlsTable, this);
     core->getEventManager().subscribe("init_ui_eng", &MainWindow::initDynamicUi, this);
     core->getEventManager().subscribe<std::unordered_map<std::string, RUI::UiPage>*>("init_ui_tracker", &MainWindow::initTrackerDynamicUi, this);
     core->getEventManager().subscribe("initialize", &MainWindow::initialize, this);
-    core->getEventManager().subscribe(name, "get_video_devices_respond", &MainWindow::setVideoDevices, this);
-    core->getEventManager().subscribe(name, "active_camera_info", &MainWindow::setActiveCamera, this);
-    core->getEventManager().subscribe(name, "active_camera_device", &MainWindow::startCamera, this);
     core->getEventManager().subscribe(name, "send_table", &MainWindow::initTrackerTable, this);
-    core->getEventManager().subscribe(name, "plugin_started", &MainWindow::uiAddPlugin, this);
-    //core->getEventManager().subscribe("send_frame_queue", &MainWindow::connectFramesToViewport, this);
-    core->getEventManager().subscribe("update_engines_combo", &MainWindow::updateEnginesCombo, this);
-    core->getEventManager().subscribe("update_trackers_combo", &MainWindow::updateTrackersCombo, this);
-    // TODO: мб стоит делать отдельный класс для подписки на сообщения
-    connect(ui->newFileMenuButton, &QAction::triggered, this, &MainWindow::onNewFileClicked);
-    connect(ui->saveFileMenuButton, &QAction::triggered, this, &MainWindow::onSaveFileClicked);
-    connect(ui->includeEngineMenuButton, &QAction::triggered, this, &MainWindow::addEngineFile);
-    connect(ui->enginesComboBox, &QComboBox::currentTextChanged,
-            this, &MainWindow::switchActiveEngine);
-    connect(ui->action_Render_API, &QAction::triggered, this, &MainWindow::setRenderApi);
-    connect(ui->videoDeviceComboBox, &QComboBox::currentTextChanged, this, &MainWindow::cameraChanged);
-    connect(ui->trackerComboBox, &QComboBox::currentTextChanged, this, &MainWindow::trackerChanged);
-    connect(ui->addTrackerButton, &QPushButton::clicked, this, &MainWindow::addTrackers);
-    connect(ui->startTracker, &QPushButton::clicked, this, &MainWindow::startTracker);
-    connect(ui->stopTracker, &QPushButton::clicked, this, &MainWindow::stopTracker);
-    connect(ui->addPlugin, &QPushButton::clicked, this, &MainWindow::addPlugin);
-    connect(ui->deletePlugin, &QPushButton::clicked, this, &MainWindow::removePlugin);
 
+    // Plugin UI subscriptions (all three types)
+    core->getEventManager().subscribe(name, "engine_ui_ready",      &MainWindow::uiAddPluginEntry, this);
+    core->getEventManager().subscribe(name, "tracker_ui_ready",     &MainWindow::uiAddPluginEntry, this);
+    core->getEventManager().subscribe(name, "gen_plugin_ui_ready",  &MainWindow::uiAddPluginEntry, this);
+    core->getEventManager().subscribe(name, "engine_ui_removed",    &MainWindow::uiRemovePluginEntry, this);
+    core->getEventManager().subscribe(name, "tracker_ui_removed",   &MainWindow::uiRemovePluginEntry, this);
+    core->getEventManager().subscribe(name, "gen_plugin_ui_removed",&MainWindow::uiRemovePluginEntry, this);
+
+    // Active state restore signals
+    core->getEventManager().subscribe(name, "engine_set_active",       &MainWindow::uiSetPluginActive, this);
+    core->getEventManager().subscribe(name, "tracker_set_active",      &MainWindow::uiSetPluginActive, this);
+    core->getEventManager().subscribe(name, "tracker_set_inactive",    &MainWindow::uiSetPluginInactive, this);
+    core->getEventManager().subscribe(name, "gen_plugin_activated",    &MainWindow::uiSetPluginActive, this);
+    core->getEventManager().subscribe(name, "gen_plugin_deactivated",  &MainWindow::uiSetPluginInactive, this);
+
+    // Button connections
+    connect(ui->newFileMenuButton,    &QAction::triggered,  this, &MainWindow::onNewFileClicked);
+    connect(ui->saveFileMenuButton,   &QAction::triggered,  this, &MainWindow::onSaveFileClicked);
+    connect(ui->action_Render_API,    &QAction::triggered,  this, &MainWindow::setRenderApi);
+    connect(ui->addPlugin,            &QPushButton::clicked, this, &MainWindow::addPlugin);
+    connect(ui->deletePlugin,         &QPushButton::clicked, this, &MainWindow::removePlugin);
+    connect(ui->reloadPlugin,         &QPushButton::clicked, this, &MainWindow::reloadPlugin);
+    connect(ui->reloadAllPlugins,     &QPushButton::clicked, this, &MainWindow::reloadAllPlugins);
+
+    // Clear the placeholder page from QToolBox
     while (ui->pluginsToolBox->count() > 0) {
         QWidget *widget = ui->pluginsToolBox->widget(0);
         ui->pluginsToolBox->removeItem(0);
         delete widget;
     }
 
+    // Replace placeholder viewport with the real ViewportWidget
     ViewportWidget* vw = new ViewportWidget(core, this);
-
     ui->gridLayout_2->replaceWidget(ui->viewport, vw);
     delete ui->viewport;
     ui->viewport = vw;
-
-    trackerRenderer = new TrackerRenderer(this);
-    trackerRenderer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    ui->verticalLayout_4->replaceWidget(ui->faceDotsViewport, trackerRenderer);
-    delete ui->faceDotsViewport;
-    ui->faceDotsViewport = trackerRenderer;
-
-    QVBoxLayout *layout = new QVBoxLayout(ui->frameForFace);
-    layout->setContentsMargins(0, 0, 0, 0);
-    cameraLabel = new QLabel(ui->frameForFace);
-    cameraLabel->setAlignment(Qt::AlignCenter);
-    cameraLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-    layout->addWidget(cameraLabel);
-    cameraLabel->show();
-
 }
 
 MainWindow::~MainWindow()
@@ -93,122 +88,347 @@ void MainWindow::initialize() {
     core->getEventManager().sendMessage(AppMessage(name, "get_video_devices_request", 0));
 }
 
+// ─── Plugin management ────────────────────────────────────────────────────────
+
 void MainWindow::addPlugin() {
+    QMenu menu(this);
+    QAction* actEngine    = menu.addAction("Добавить движок");
+    QAction* actTracker   = menu.addAction("Добавить трекер");
+    QAction* actGenPlugin = menu.addAction("Добавить плагин");
 
-    QWidget* parentWidget = ui->centralwidget;
+    QAction* chosen = menu.exec(QCursor::pos());
 
-    std::vector<std::string> paths {};
+    if      (chosen == actEngine)    addEnginePlugin();
+    else if (chosen == actTracker)   addTrackerPlugin();
+    else if (chosen == actGenPlugin) addGenPlugin();
+}
 
-    QStringList names = QFileDialog::getOpenFileNames(
-        parentWidget,
+void MainWindow::addEnginePlugin() {
+    QStringList fileNames = QFileDialog::getOpenFileNames(
+        ui->centralwidget,
+        "Выберите файл движка",
+        QDir::homePath(),
+        "Динамические библиотеки (*.dll);;Все файлы (*)"
+    );
+    std::vector<std::string> paths;
+    for (const QString& f : fileNames)
+        paths.emplace_back(f.toStdString());
+    if (!paths.empty())
+        core->getEventManager().sendMessage(AppMessage(name, "add_engines_names", paths));
+}
+
+void MainWindow::addTrackerPlugin() {
+    QStringList fileNames = QFileDialog::getOpenFileNames(
+        ui->centralwidget,
+        "Выберите файл трекера",
+        QDir::homePath(),
+        "Динамические библиотеки (*.dll);;Все файлы (*)"
+    );
+    std::vector<std::string> paths;
+    for (const QString& f : fileNames)
+        paths.emplace_back(f.toStdString());
+    if (!paths.empty())
+        core->getEventManager().sendMessage(AppMessage(name, "add_trackers_names", paths));
+}
+
+void MainWindow::addGenPlugin() {
+    QStringList fileNames = QFileDialog::getOpenFileNames(
+        ui->centralwidget,
         "Выберите файл плагина",
         QDir::homePath(),
         "Файлы плагинов (*.ofp);;Все файлы (*)"
-        );
-
-    for (QString& name : names) {
-        paths.emplace_back(name.toStdString());
-    }
-
-    if (!paths.empty()) {
+    );
+    std::vector<std::string> paths;
+    for (const QString& f : fileNames)
+        paths.emplace_back(f.toStdString());
+    if (!paths.empty())
         core->getEventManager().sendMessage(AppMessage(name, "add_plugins_to_registry", paths));
-    }
 }
 
 void MainWindow::removePlugin() {
-    // сообщение об удалении
+    int currentIndex = ui->pluginsToolBox->currentIndex();
+    if (currentIndex < 0) {
+        qDebug() << "[UI] removePlugin: no page selected";
+        return;
+    }
+    QWidget* widget = ui->pluginsToolBox->widget(currentIndex);
+    if (!widget) {
+        qDebug() << "[UI] removePlugin: widget is null";
+        return;
+    }
+
+    QString pathQ = widget->property("pluginPath").toString();
+    if (pathQ.isEmpty()) {
+        qDebug() << "[UI] removePlugin: pluginPath property is empty";
+        return;
+    }
+
+    std::string path = pathQ.toStdString();
+    int typeInt = widget->property("pluginType").toInt();
+    PluginUIType type = static_cast<PluginUIType>(typeInt);
+
+    switch (type) {
+        case PluginUIType::Engine:
+            core->getEventManager().sendMessage(AppMessage(name, "remove_engine", path));
+            break;
+        case PluginUIType::Tracker:
+            core->getEventManager().sendMessage(AppMessage(name, "remove_tracker", path));
+            break;
+        case PluginUIType::Generic:
+            core->getEventManager().sendMessage(AppMessage(name, "remove_gen_plugin", path));
+            break;
+    }
 }
 
-void MainWindow::uiAddPlugin(std::string name) {
+void MainWindow::uiAddPluginEntry(PluginUIInfo info) {
     if (QThread::currentThread() != qApp->thread()) {
-        qDebug() << "[THREAD] Wrong thread! Re-invoking via QueuedConnection with Lambda...";
-
-        QMetaObject::invokeMethod(this, [this, name]() {
-            this->uiAddPlugin(name);
+        QMetaObject::invokeMethod(this, [this, info]() {
+            this->uiAddPluginEntry(info);
         }, Qt::QueuedConnection);
         return;
     }
-    QWidget *widget = new QWidget;
-    QVBoxLayout *layout = new QVBoxLayout(widget);
-    layout->addWidget(new QLabel(QString::fromStdString(name)));
-    ui->pluginsToolBox->addItem(widget, QString::fromStdString(name));
+
+    // Duplicate protection
+    if (pluginPageEntries.count(info.path)) {
+        qDebug() << "[UI] Duplicate plugin page skipped:" << QString::fromStdString(info.path);
+        return;
+    }
+
+    // Choose background color by type
+    QColor bgColor;
+    switch (info.type) {
+        case PluginUIType::Engine:  bgColor = QColor(255, 250, 205); break; // light yellow (lemonchiffon)
+        case PluginUIType::Tracker: bgColor = QColor(198, 239, 206); break; // light green
+        case PluginUIType::Generic: bgColor = QColor(255, 205, 210); break; // light red/pink
+    }
+
+    // Build the page widget
+    QWidget* widget = new QWidget;
+    widget->setAutoFillBackground(true);
+    QPalette pal = widget->palette();
+    pal.setColor(QPalette::Window, bgColor);
+    widget->setPalette(pal);
+
+    QVBoxLayout* layout = new QVBoxLayout(widget);
+    layout->setContentsMargins(6, 6, 6, 6);
+    layout->setSpacing(4);
+
+    // Display name (shortened path)
+    QString displayName = QString::fromStdString(info.name);
+    QFileInfo fi(displayName);
+    if (fi.exists() || displayName.contains('/') || displayName.contains('\\')) {
+        displayName = fi.fileName(); // show only filename
+    }
+    QLabel* nameLabel = new QLabel("<b>" + displayName + "</b>");
+    nameLabel->setWordWrap(true);
+    layout->addWidget(nameLabel);
+
+    // Full path in smaller text
+    QLabel* pathLabel = new QLabel(QString::fromStdString(info.path));
+    pathLabel->setWordWrap(true);
+    QFont smallFont = pathLabel->font();
+    smallFont.setPointSize(smallFont.pointSize() - 1);
+    pathLabel->setFont(smallFont);
+    layout->addWidget(pathLabel);
+
+    // Checkbox for enable/disable
+    QCheckBox* checkBox = new QCheckBox("Активен");
+    layout->addWidget(checkBox);
+    layout->addStretch();
+
+    // Store path/type as widget properties for removePlugin()
+    widget->setProperty("pluginPath", QString::fromStdString(info.path));
+    widget->setProperty("pluginType", static_cast<int>(info.type));
+
+    // Connect checkbox behavior per type
+    if (info.type == PluginUIType::Engine) {
+        engineCheckboxes.push_back(checkBox);
+        connect(checkBox, &QCheckBox::toggled, this,
+                [this, path = info.path, checkBox](bool checked) {
+            if (checked) {
+                // Exclusive: uncheck all other engine checkboxes
+                for (QCheckBox* cb : engineCheckboxes) {
+                    if (cb != checkBox && cb->isChecked()) {
+                        cb->blockSignals(true);
+                        cb->setChecked(false);
+                        cb->blockSignals(false);
+                    }
+                }
+                core->getEventManager().sendMessage(AppMessage(name, "activate_engine_by_path", path));
+            }
+        });
+    } else if (info.type == PluginUIType::Tracker) {
+        connect(checkBox, &QCheckBox::toggled, this,
+                [this, path = info.path](bool checked) {
+            if (checked)
+                core->getEventManager().sendMessage(AppMessage(name, "activate_tracker_by_path", path));
+            else
+                core->getEventManager().sendMessage(AppMessage(name, "deactivate_tracker_by_path", path));
+        });
+    } else {
+        // Generic plugin — checkbox is interactive (enable/disable)
+        connect(checkBox, &QCheckBox::toggled, this,
+                [this, path = info.path](bool checked) {
+            if (checked)
+                core->getEventManager().sendMessage(AppMessage(name, "enable_gen_plugin", path));
+            else
+                core->getEventManager().sendMessage(AppMessage(name, "disable_gen_plugin", path));
+        });
+        // Initially unchecked — will be checked when gen_plugin_activated arrives
+        checkBox->setChecked(false);
+    }
+
+    // Register entry
+    PluginPageEntry entry;
+    entry.path     = info.path;
+    entry.type     = info.type;
+    entry.checkBox = checkBox;
+    pluginPageEntries[info.path] = entry;
+
+    // Add to toolbox (use display name as page title)
+    ui->pluginsToolBox->addItem(widget, displayName);
 }
 
-void MainWindow::uiRemovePlugin() {
-
-}
-
-void MainWindow::setVideoDevices(std::vector<CameraInfo> cameras) {
-    for (CameraInfo camera : cameras) {
-        std::cout << "[1-1]"<< camera.name << std::endl;
-        ui->videoDeviceComboBox->addItem(QString::fromStdString(camera.name));
+void MainWindow::uiSetPluginActive(std::string path) {
+    if (QThread::currentThread() != qApp->thread()) {
+        QMetaObject::invokeMethod(this, [this, path]() { uiSetPluginActive(path); }, Qt::QueuedConnection);
+        return;
+    }
+    auto it = pluginPageEntries.find(path);
+    if (it == pluginPageEntries.end()) return;
+    QCheckBox* cb = it->second.checkBox;
+    if (!cb) return;
+    cb->blockSignals(true);
+    cb->setChecked(true);
+    cb->blockSignals(false);
+    // For engines: also enforce exclusivity (uncheck all other engine checkboxes)
+    if (it->second.type == PluginUIType::Engine) {
+        for (QCheckBox* other : engineCheckboxes) {
+            if (other != cb && other->isChecked()) {
+                other->blockSignals(true);
+                other->setChecked(false);
+                other->blockSignals(false);
+            }
+        }
     }
 }
 
-void MainWindow::cameraChanged() {
-    this->core->getEventManager().sendMessage(AppMessage(name, "activate_camera", ui->videoDeviceComboBox->currentText().toStdString()));
+void MainWindow::uiSetPluginInactive(std::string path) {
+    if (QThread::currentThread() != qApp->thread()) {
+        QMetaObject::invokeMethod(this, [this, path]() { uiSetPluginInactive(path); }, Qt::QueuedConnection);
+        return;
+    }
+    auto it = pluginPageEntries.find(path);
+    if (it == pluginPageEntries.end()) return;
+    QCheckBox* cb = it->second.checkBox;
+    if (!cb) return;
+    cb->blockSignals(true);
+    cb->setChecked(false);
+    cb->blockSignals(false);
 }
 
-void MainWindow::setActiveCamera(CameraInfo camera) {
-    ui->maxFpsLabel->setText(QString::fromStdString(std::to_string(camera.maxFps)));
-    // std::cout << "UXZ-45: " << camera.to_string();
+void MainWindow::reloadPlugin() {
+    int currentIndex = ui->pluginsToolBox->currentIndex();
+    if (currentIndex < 0) return;
+    QWidget* widget = ui->pluginsToolBox->widget(currentIndex);
+    if (!widget) return;
+    QString pathQ = widget->property("pluginPath").toString();
+    if (pathQ.isEmpty()) return;
+    std::string path = pathQ.toStdString();
+    int typeInt = widget->property("pluginType").toInt();
+    PluginUIType type = static_cast<PluginUIType>(typeInt);
+
+    // Reload = remove then re-add
+    switch (type) {
+        case PluginUIType::Engine:
+            core->getEventManager().sendMessage(AppMessage(name, "remove_engine", path));
+            core->getEventManager().sendMessage(AppMessage(name, "add_engines_names", std::vector<std::string>{path}));
+            break;
+        case PluginUIType::Tracker:
+            core->getEventManager().sendMessage(AppMessage(name, "remove_tracker", path));
+            core->getEventManager().sendMessage(AppMessage(name, "add_trackers_names", std::vector<std::string>{path}));
+            break;
+        case PluginUIType::Generic:
+            core->getEventManager().sendMessage(AppMessage(name, "disable_gen_plugin", path));
+            core->getEventManager().sendMessage(AppMessage(name, "enable_gen_plugin", path));
+            break;
+    }
 }
 
-// TODO: с девайса перейти на шину из менеджера
-void MainWindow::startCamera(std::shared_ptr<Device> camera) {
-    if (!camera) return;
-
-    if (currentCamera) {
-        currentCamera->close();
-        currentCamera->setDataCallback(nullptr);
-        currentCamera.reset();
+void MainWindow::reloadAllPlugins() {
+    // Collect all paths by type (order: engines first, then trackers, then gen plugins)
+    std::vector<std::string> enginePaths, trackerPaths, genPaths;
+    for (const auto& [path, entry] : pluginPageEntries) {
+        switch (entry.type) {
+            case PluginUIType::Engine:  enginePaths.push_back(path); break;
+            case PluginUIType::Tracker: trackerPaths.push_back(path); break;
+            case PluginUIType::Generic: genPaths.push_back(path); break;
+        }
     }
 
-    currentCamera = camera;
+    // Remove all
+    for (const auto& path : enginePaths)
+        core->getEventManager().sendMessage(AppMessage(name, "remove_engine", path));
+    for (const auto& path : trackerPaths)
+        core->getEventManager().sendMessage(AppMessage(name, "remove_tracker", path));
+    for (const auto& path : genPaths)
+        core->getEventManager().sendMessage(AppMessage(name, "disable_gen_plugin", path));
 
-    camera->setDataCallback([this](const std::vector<uint8_t>& data) {
-        QByteArray ba(reinterpret_cast<const char*>(data.data()), static_cast<int>(data.size()));
-        QMetaObject::invokeMethod(this, "onFrameReceived", Qt::QueuedConnection, Q_ARG(QByteArray, ba));
-    });
+    // Re-add in order
+    if (!enginePaths.empty())
+        core->getEventManager().sendMessage(AppMessage(name, "add_engines_names", enginePaths));
+    if (!trackerPaths.empty())
+        core->getEventManager().sendMessage(AppMessage(name, "add_trackers_names", trackerPaths));
+    for (const auto& path : genPaths)
+        core->getEventManager().sendMessage(AppMessage(name, "enable_gen_plugin", path));
+}
 
-    camera->open();
-    if (!camera->isOpen()) {
-        std::cerr << "Failed to open camera" << std::endl;
-        currentCamera.reset();
+void MainWindow::uiRemovePluginEntry(std::string path) {
+    if (QThread::currentThread() != qApp->thread()) {
+        QMetaObject::invokeMethod(this, [this, path]() {
+            this->uiRemovePluginEntry(path);
+        }, Qt::QueuedConnection);
+        return;
     }
+
+    auto it = pluginPageEntries.find(path);
+    if (it == pluginPageEntries.end()) {
+        qDebug() << "[UI] uiRemovePluginEntry: path not found:" << QString::fromStdString(path);
+        return;
+    }
+
+    const PluginPageEntry& entry = it->second;
+
+    // Remove from engineCheckboxes list if engine type
+    if (entry.type == PluginUIType::Engine && entry.checkBox) {
+        engineCheckboxes.erase(
+            std::remove(engineCheckboxes.begin(), engineCheckboxes.end(), entry.checkBox),
+            engineCheckboxes.end()
+        );
+    }
+
+    // Find the page in the QToolBox and remove it
+    for (int i = 0; i < ui->pluginsToolBox->count(); ++i) {
+        QWidget* w = ui->pluginsToolBox->widget(i);
+        if (w) {
+            QString propPath = w->property("pluginPath").toString();
+            if (propPath.toStdString() == path) {
+                ui->pluginsToolBox->removeItem(i);
+                delete w;
+                break;
+            }
+        }
+    }
+
+    pluginPageEntries.erase(it);
+    qDebug() << "[UI] Plugin page removed:" << QString::fromStdString(path);
 }
 
-void MainWindow::onFrameReceived(const QByteArray &jpegData) {
-    if (jpegData.isEmpty()) return;
-
-    std::vector<uchar> buf(jpegData.begin(), jpegData.end());
-    cv::Mat frame = cv::imdecode(buf, cv::IMREAD_COLOR); // !!! CV лучше не юзать тут
-
-    if (frame.empty()) return;
-
-    cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-
-    QImage img(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_RGB888);
-    QImage imageCopy = img.copy();
-
-    QPixmap pixmap = QPixmap::fromImage(imageCopy);
-
-    cameraLabel->setPixmap(pixmap);
-
-    cameraLabel->setScaledContents(true);
-
-    cameraLabel->setAlignment(Qt::AlignCenter);
-}
-
-void MainWindow::showCacheErrorMessage() {
-    std::cout << "Cache doesn't exists, idi peredelivay" << std::endl;
-}
+// ─── Tracker table ────────────────────────────────────────────────────────────
 
 void MainWindow::initTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table) {
-    if (table != nullptr) {
+    if (!table) return;
     if (QThread::currentThread() != qApp->thread()) {
-        qDebug() << "[THREAD] Wrong thread! Re-invoking via QueuedConnection with Lambda...";
-
         QMetaObject::invokeMethod(this, [this, table]() {
             this->initTrackerTable(table);
         }, Qt::QueuedConnection);
@@ -232,13 +452,12 @@ void MainWindow::initTrackerTable(std::unordered_map<std::string, std::shared_pt
     tbl->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     int row = 0;
-    for (const auto& [name, ptr] : *table) {
-        auto* nameItem = new QTableWidgetItem(QString::fromStdString(name));
+    for (const auto& [key, ptr] : *table) {
+        auto* nameItem = new QTableWidgetItem(QString::fromStdString(key));
         tbl->setItem(row, 0, nameItem);
 
         void* rawPtr = ptr.get();
         quint64 addr = reinterpret_cast<quint64>(rawPtr);
-
         nameItem->setData(Qt::UserRole, QVariant::fromValue<qulonglong>(addr));
 
         tbl->setItem(row, 1, new QTableWidgetItem(""));
@@ -250,15 +469,11 @@ void MainWindow::initTrackerTable(std::unordered_map<std::string, std::shared_pt
         _updateTimer = new QTimer(this);
         connect(_updateTimer, &QTimer::timeout, this, &MainWindow::updateTrackerTable);
         _updateTimer->start(16);
-        qDebug() << "[TIMER] Timer created and started. Event loop should be running.";
-    }
+        qDebug() << "[TIMER] Tracker table update timer started.";
     }
 }
 
 void MainWindow::updateTrackerTable() {
-    static int callCount = 0;
-    callCount++;
-
     QTableWidget* tbl = ui->tableTrackerWidget;
     if (!tbl || tbl->rowCount() == 0) return;
 
@@ -277,45 +492,22 @@ void MainWindow::updateTrackerTable() {
         if (addr == 0) continue;
 
         void* rawPtr = reinterpret_cast<void*>(static_cast<uintptr_t>(addr));
-
         const std::string paramName = nameItem->text().toStdString();
         QString valueStr;
-        bool hasData = false;
 
         try {
             if (paramName == "timestamp") {
                 double val = *reinterpret_cast<double*>(rawPtr);
-
-                if (val > 0.0) {
-                    valueStr = QString::number(val, 'f', 6);
-                } else {
-                    valueStr = "-";
-                }
-            }
-            else if (paramName == "faceId") {
+                valueStr = (val > 0.0) ? QString::number(val, 'f', 6) : "-";
+            } else if (paramName == "faceId") {
                 int val = *reinterpret_cast<int*>(rawPtr);
-
-                if (val >= 0) {
-                    valueStr = QString::number(val);
-                } else {
-                    valueStr = "-";
-                }
-            }
-            else if (paramName == "success") {
+                valueStr = (val >= 0) ? QString::number(val) : "-";
+            } else if (paramName == "success") {
                 bool val = *reinterpret_cast<bool*>(rawPtr);
                 valueStr = val ? "true" : "false";
-            }
-            else {
+            } else {
                 float val = *reinterpret_cast<float*>(rawPtr);
-
-
-                if (std::isnan(val) || std::isinf(val)) {
-                    valueStr = "NaN";
-                }
-
-                else {
-                    valueStr = QString::number(val, 'f', 5);
-                }
+                valueStr = (std::isnan(val) || std::isinf(val)) ? "NaN" : QString::number(val, 'f', 5);
             }
         } catch (...) {
             valueStr = "Err";
@@ -326,18 +518,15 @@ void MainWindow::updateTrackerTable() {
             valItem = new QTableWidgetItem(valueStr);
             tbl->setItem(row, 1, valItem);
         } else {
-
-            if (valItem->text() != valueStr) {
+            if (valItem->text() != valueStr)
                 valItem->setText(valueStr);
-
-            }
         }
     }
 
     tbl->setUpdatesEnabled(wasUpdatesEnabled);
     tbl->blockSignals(false);
 
-    // Extract points
+    // Extract landmark points for tracker renderer
     std::vector<QPointF> points;
     if (_trackerTableCache) {
         int i = 0;
@@ -354,27 +543,26 @@ void MainWindow::updateTrackerTable() {
             }
         }
     }
-    
+
     if (trackerRenderer) {
         trackerRenderer->setPoints(points);
     }
 }
 
+// ─── Misc ─────────────────────────────────────────────────────────────────────
 
 void MainWindow::onNewFileClicked() {
-    this->core->getEventManager().sendMessage(AppMessage("UI", "new", 0));
+    core->getEventManager().sendMessage(AppMessage("UI", "new", 0));
 }
 
 void MainWindow::onSaveFileClicked() {
-    this->core->getEventManager().sendMessage(AppMessage("UI", "save", 2147483646));
+    core->getEventManager().sendMessage(AppMessage("UI", "save", 2147483646));
 }
 
-void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> table) {
+void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> table) {}
 
-}
-
-void MainWindow::initDynamicUi(shared_ptr<std::vector<RUI::UiPage>> pages) {
-    QMetaObject::invokeMethod(this, [this, pages]() { // это нужно из-за того, что рендер может вызываться не из ui-потока qt
+void MainWindow::initDynamicUi(std::shared_ptr<std::vector<RUI::UiPage>> pages) {
+    QMetaObject::invokeMethod(this, [this, pages]() {
         for (UiPage root : *pages) {
             UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(root), ui->leftPanel);
         }
@@ -384,119 +572,25 @@ void MainWindow::initDynamicUi(shared_ptr<std::vector<RUI::UiPage>> pages) {
 void MainWindow::initTrackerDynamicUi(std::unordered_map<std::string, RUI::UiPage>* pages) {
     if (!pages) return;
     QMetaObject::invokeMethod(this, [this, pages]() {
-        for (const auto& [name, page] : *pages) {
+        for (const auto& [pageName, page] : *pages) {
             UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(page), ui->rightPanel);
         }
     }, Qt::QueuedConnection);
 }
 
-void MainWindow::connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr) {
-}
+void MainWindow::connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr) {}
 
-void MainWindow::addTrackers() {
-    QWidget* parentWidget = ui->centralwidget;
-
-    QStringList fileNames = QFileDialog::getOpenFileNames(
-        parentWidget,
-        "Выберите файл трекера",
-        QDir::homePath(),
-        "Динамические библиотеки (*.dll);;Все файлы (*)"
-        );
-
-    std::vector<std::string> names {};
-
-    for (QString qstr : fileNames) {
-        names.emplace_back(qstr.toStdString());
-    }
-
-    for (std::string name : names) {
-        ui->trackerComboBox->addItem(QString::fromStdString(name));
-    }
-
-    core->getEventManager().sendMessage(AppMessage(name, "add_trackers_names", names)); // FIXME: Не вызывается сообщение, почему? Добавить через местную систему логгирование ошибок
-}
-
-// TODO: Заменить логгер, объединить некоторые сообщения и методы (dll разрешаются одинаково), можно заменить расширения с dll на конкретные + потом их иконки менять
-
-void MainWindow::trackerChanged(const QString& tracker) {
-
-    Meta meta;
-
-    meta.path = tracker.toStdString();
-    meta.func_names.emplace_back("create");
-
-    core->getEventManager().sendMessage(AppMessage("UI", "tracking_resolving_request", meta));
-}
-
-void MainWindow::setActiveTracker(TrackerInfo info) {
-
-}
-
-void MainWindow::addEngineFile() {
-
-    QWidget* parentWidget = ui->centralwidget;
-
-    QStringList fileNames = QFileDialog::getOpenFileNames(
-        parentWidget,
-        "Выберите файл движка",
-        QDir::homePath(),
-        "Динамические библиотеки (*.dll);;Все файлы (*)"
-        );
-
-    std::vector<std::string> names {};
-
-    for (QString qstr : fileNames) {
-        names.emplace_back(qstr.toStdString());
-    }
-
-    core->getEventManager().sendMessage(AppMessage("UI", "add_engines_names", names));
-    // имена движков, по идее, надо кешировать и вписать в дроплист
-}
-
-void MainWindow::switchActiveEngine(const QString& engine) {
-
-    LibMeta meta;
-    meta.path = engine.toStdString();
-    meta.func_names.emplace_back("create_engine");
-    //meta.func_names.emplace_back("destroy");
-    core->getEventManager().sendMessage(AppMessage("UI", "engine_resolving_request", meta));
-
-}
-
-void MainWindow::updateEnginesCombo(const std::set<std::string> &names) {
-    std::cout << "Eng" << '\n';
-    for (std::string name : names) {
-        std::cout << name << '\n';
-        ui->enginesComboBox->addItem(QString::fromStdString(name));
-    }
-}
-
-void MainWindow::updateTrackersCombo(const std::set<std::string> &names) {
-    std::cout << "Tra" << '\n';
-    for (std::string name : names) {
-        std::cout << name << '\n';
-        ui->trackerComboBox->addItem(QString::fromStdString(name));
-    }
+void MainWindow::showCacheErrorMessage() {
+    std::cout << "Cache doesn't exist" << std::endl;
 }
 
 void MainWindow::setRenderApi() {
-    QWidget* parentWidget = ui->centralwidget;
-
     QString fileName = QFileDialog::getOpenFileName(
-        parentWidget,
+        ui->centralwidget,
         "Выберите файл API",
         QDir::homePath(),
         "Динамические библиотеки (*.dll);;Все файлы (*)"
-        );
-
-    std::cout << fileName.toStdString() << std::endl;
-    core->getEventManager().sendMessage(AppMessage("UI", "set_render_api", fileName.toStdString()));
-}
-
-void MainWindow::startTracker() {
-    core->getEventManager().sendMessage(AppMessage(name, "start_tracker", 0));
-}
-
-void MainWindow::stopTracker() {
-    core->getEventManager().sendMessage(AppMessage(name, "stop_tracker", 0));
+    );
+    if (!fileName.isEmpty())
+        core->getEventManager().sendMessage(AppMessage("UI", "set_render_api", fileName.toStdString()));
 }

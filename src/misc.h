@@ -1,6 +1,7 @@
 #ifndef MISC_H
 #define MISC_H
 
+#include <set>
 #include <string>
 #include <functional>
 #include <any>
@@ -100,6 +101,14 @@ struct TrackerInfo {
 
 };
 
+enum class PluginUIType { Engine, Tracker, Generic };
+
+struct PluginUIInfo {
+    std::string name;   // display name
+    std::string path;   // file path (key for removal/identification)
+    PluginUIType type;
+};
+
 #include "ieventmanager.h"
 
 class IDataBus {
@@ -114,6 +123,7 @@ public:
     ITracker() = default;
     ITracker(IEventManager* eventManager, IDataBus* dataBus) {}
     virtual ~ITracker() = default;
+    virtual void shutdown() {}
     virtual bool start() = 0;
     virtual void stop() = 0;
     virtual bool isRunning() const = 0;
@@ -143,6 +153,7 @@ public:
     IModel() = default;
     IModel(IEventManager* eventManager, IDataBus* dbus) {}
     virtual ~IModel() = default;
+    virtual void shutdown() {}
     virtual void test() = 0;
     virtual std::shared_ptr<std::vector<RUI::UiPage>> getUiPages() = 0;
     virtual void setDataBus(IDataBus* db) = 0;
@@ -157,6 +168,8 @@ public:
     IGenPlugin() = default;
     IGenPlugin(IEventManager* eventManager, IDataBus* dataBus) {}
     virtual ~IGenPlugin() = default;
+    virtual void shutdown() {}
+    virtual bool isActive() const { return true; }
     virtual void setDataBus(IDataBus* db) = 0;
     virtual std::string getName() = 0;
 };
@@ -179,6 +192,13 @@ struct Meta {
 struct EngineFuncs {
     CreateEngine ce;
     // ...
+};
+
+struct ViewportCommand {
+    int mouseX = 0;
+    int mouseY = 0;
+    int scroll = 0;
+    std::set<std::string> currentCommand {};
 };
 
 #endif // MISC_H

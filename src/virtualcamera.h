@@ -1,31 +1,32 @@
-// #ifndef VIRTUALCAMERA_H
-// #define VIRTUALCAMERA_H
+#ifndef VIRTUALCAMERA_H
+#define VIRTUALCAMERA_H
 
-// #include <cstdint>
-// #include <windows.h> lean and mean и что-то ещё надо
-// #include <string>
+#include <cstdint>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <string>
 
-// class VirtualCamera
-// {
-// public:
-//     VirtualCamera();
-//     ~VirtualCamera();
+class VirtualCamera
+{
+public:
+    VirtualCamera();
+    ~VirtualCamera();
 
-//     bool init(const std::string& sharedName,
-//               int width,
-//               int height);
+    bool init(const std::string& sharedName,
+              int width,
+              int height);
 
-//     void pushFrame(const uint8_t* rgba);
+    void pushFrame(const uint8_t* rgba);
 
-//     void shutdown();
+    void shutdown();
 
-// private:
-//     HANDLE mapping = nullptr;
-//     uint8_t* buffer = nullptr;
+private:
+    HANDLE mapping = nullptr;
+    uint8_t* buffer = nullptr;
 
-//     int width = 0;
-//     int height = 0;
-//     size_t frameSize = 0;
-// };
+    int width = 0;
+    int height = 0;
+    size_t frameSize = 0;
+};
 
-// #endif // VIRTUALCAMERA_H
+#endif // VIRTUALCAMERA_H

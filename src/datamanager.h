@@ -45,6 +45,7 @@ private:
     void resolveApi(LibMeta meta);
     void resolveTracker(Meta meta);
     void resolvePlugin(Meta meta);
+    void unloadLibrary(std::string path);
 
 };
 

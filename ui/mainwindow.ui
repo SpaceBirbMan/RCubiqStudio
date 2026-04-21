@@ -109,218 +109,23 @@
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
             <item>
-             <widget class="QLabel" name="label">
-              <property name="text">
-               <string>Активный движок</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="5,1">
-              <item>
-               <widget class="QComboBox" name="enginesComboBox"/>
-              </item>
-              <item>
-               <widget class="QPushButton" name="addEngineButton">
-                <property name="minimumSize">
-                 <size>
-                  <width>30</width>
-                  <height>0</height>
-                 </size>
-                </property>
-                <property name="text">
-                 <string>+</string>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </item>
-            <item>
-             <widget class="Line" name="line">
-              <property name="orientation">
-               <enum>Qt::Horizontal</enum>
-              </property>
-             </widget>
-            </item>
-            <item>
              <widget class="QToolBox" name="toolBox">
               <property name="currentIndex">
                <number>0</number>
               </property>
-              <widget class="QWidget" name="page_3">
-               <property name="geometry">
-                <rect>
-                 <x>0</x>
-                 <y>0</y>
-                 <width>205</width>
-                 <height>411</height>
-                </rect>
-               </property>
-               <attribute name="label">
-                <string>Трекер</string>
-               </attribute>
-               <layout class="QVBoxLayout" name="verticalLayout_3">
-                <item>
-                 <layout class="QHBoxLayout" name="horizontalLayout_4">
-                  <item>
-                   <widget class="QPushButton" name="startTracker">
-                    <property name="text">
-                     <string>Включить</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QPushButton" name="stopTracker">
-                    <property name="text">
-                     <string>Отключить</string>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
-                </item>
-                <item>
-                 <widget class="QCheckBox" name="startWithProgrammCheck">
-                  <property name="text">
-                   <string>Включать при входе</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <layout class="QHBoxLayout" name="horizontalLayout" stretch="50,1">
-                  <item>
-                   <widget class="QComboBox" name="trackerComboBox"/>
-                  </item>
-                  <item>
-                   <widget class="QPushButton" name="addTrackerButton">
-                    <property name="minimumSize">
-                     <size>
-                      <width>30</width>
-                      <height>0</height>
-                     </size>
-                    </property>
-                    <property name="text">
-                     <string>+</string>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
-                </item>
-                <item>
-                 <widget class="QFrame" name="frameForFace">
-                  <property name="sizePolicy">
-                   <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-                    <horstretch>0</horstretch>
-                    <verstretch>0</verstretch>
-                   </sizepolicy>
-                  </property>
-                  <property name="minimumSize">
-                   <size>
-                    <width>0</width>
-                    <height>100</height>
-                   </size>
-                  </property>
-                  <property name="frameShape">
-                   <enum>QFrame::StyledPanel</enum>
-                  </property>
-                  <property name="frameShadow">
-                   <enum>QFrame::Raised</enum>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="Line" name="line_3">
-                  <property name="orientation">
-                   <enum>Qt::Horizontal</enum>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QLabel" name="label_2">
-                  <property name="text">
-                   <string>Устройство</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QComboBox" name="videoDeviceComboBox"/>
-                </item>
-                <item>
-                 <widget class="QPushButton" name="videoDeviceSettingsButton">
-                  <property name="text">
-                   <string>Настройки устройства</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="Line" name="line_2">
-                  <property name="orientation">
-                   <enum>Qt::Horizontal</enum>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QLabel" name="fpsSettedNowLabel">
-                  <property name="text">
-                   <string>Max FPS: 0</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <layout class="QHBoxLayout" name="horizontalLayout_2">
-                  <item>
-                   <widget class="QLabel" name="label_5">
-                    <property name="text">
-                     <string>0</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QSlider" name="maxFpsHorizontalSlider">
-                    <property name="orientation">
-                     <enum>Qt::Horizontal</enum>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QLabel" name="maxFpsLabel">
-                    <property name="text">
-                     <string>30</string>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
-                </item>
-                <item>
-                 <spacer name="verticalSpacer">
-                  <property name="orientation">
-                   <enum>Qt::Vertical</enum>
-                  </property>
-                  <property name="sizeHint" stdset="0">
-                   <size>
-                    <width>20</width>
-                    <height>40</height>
-                   </size>
-                  </property>
-                 </spacer>
-                </item>
-               </layout>
-              </widget>
               <widget class="QWidget" name="pageTrackers">
                <property name="geometry">
                 <rect>
                  <x>0</x>
                  <y>0</y>
                  <width>222</width>
-                 <height>340</height>
+                 <height>376</height>
                 </rect>
                </property>
                <attribute name="label">
                 <string>Привязки</string>
                </attribute>
                <layout class="QVBoxLayout" name="verticalLayout_4">
-                <item>
-                 <widget class="QWidget" name="faceDotsViewport" native="true"/>
-                </item>
                 <item>
                  <widget class="QTableWidget" name="tableTrackerWidget"/>
                 </item>
@@ -338,7 +143,7 @@
        <attribute name="title">
         <string>Плагины</string>
        </attribute>
-       <layout class="QVBoxLayout" name="verticalLayout_7" stretch="1,15">
+       <layout class="QVBoxLayout" name="verticalLayout_7" stretch="1,1,15">
         <item>
          <layout class="QHBoxLayout" name="horizontalLayout_6">
           <item>
@@ -365,6 +170,37 @@
            <widget class="QPushButton" name="addPlugin">
             <property name="text">
              <string>+ плагин</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_7">
+          <item>
+           <spacer name="horizontalSpacer_3">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="reloadPlugin">
+            <property name="text">
+             <string>↺ текущий</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="reloadAllPlugins">
+            <property name="text">
+             <string>↺ все</string>
             </property>
            </widget>
           </item>
@@ -505,7 +341,6 @@
      <string>Настройки</string>
     </property>
     <addaction name="action_Render_API"/>
-    <addaction name="includeEngineMenuButton"/>
     <addaction name="action"/>
    </widget>
    <addaction name="menu"/>
@@ -522,11 +357,6 @@
   <action name="saveFileMenuButton">
    <property name="text">
     <string>Сохранить как...</string>
-   </property>
-  </action>
-  <action name="includeEngineMenuButton">
-   <property name="text">
-    <string>Подключить движок...</string>
    </property>
   </action>
   <action name="action_Render_API">

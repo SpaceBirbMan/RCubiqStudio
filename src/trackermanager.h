@@ -3,6 +3,8 @@
 
 #include <memory>
 #include <set>
+#include <unordered_map>
+#include <queue>
 #include "appcore.h"
 #include "icacheable.h"
 #include "misc.h"
@@ -11,16 +13,16 @@ class TrackerManager : public ICacheable
 {
 private:
 
-    std::shared_ptr<ITracker> currentTracker;
+    std::unordered_map<std::string, ITracker*> trackers;  // path -> instance
+    std::string pendingResolutionPath;                      // path currently being resolved
 
     nlohmann::json serializeCache() const;
     void deserializeCache(const nlohmann::json& data);
 
-    std::set<std::string>trackersRegistry {};
+    std::set<std::string> trackersRegistry {};
+    std::set<std::string> activeTrackerPaths {};  // paths of trackers that should be running
 
     std::string name = "TrackerManager";
-
-    ITracker* tracker; // а зачем второй указатель?
 
     AppCore* core = nullptr;
 
@@ -32,18 +34,20 @@ public:
 
     std::string cacheKey() const;
 
-    void setTracker(std::shared_ptr<ITracker> tracker);
-
     void startTracking();
     void stopTracking();
 
     bool isRunning() const;
 
     void initialize();
-
     void preInitialize();
     void addNames(std::vector<std::string> names);
     void activateTracker(std::vector<void*> pointers);
+    void activateTrackerByPath(std::string path);
+    void deactivateTrackerByPath(std::string path);
+    void removeTracker(std::string path);
+    void resendTrackerTables();
+    void setTrackerActiveInUI(std::string path);
 };
 
 #endif

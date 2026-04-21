@@ -4,6 +4,7 @@
 #include "eventmanager.h"
 #include <iostream>
 #include <vector>
+#include "crashhandler.h"
 
 class AppCore
 {
@@ -32,8 +33,8 @@ private:
     bool pre_init_flag = false;
 
     EventQueue *eQueuePointer = nullptr;
-
     EventManager eventManager;
+    CrashHandler* crashHandler = nullptr;
 
     void dummyFunction() {
         std::cout<< eQueuePointer->logQueue() << std::endl;

@@ -8,6 +8,8 @@
 #include <QFileDialog>
 #include "devices.h"
 #include <QLabel>
+#include <QCheckBox>
+#include <unordered_map>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -16,6 +18,13 @@ class MainWindow;
 QT_END_NAMESPACE
 
 class TrackerRenderer;
+
+// Info stored per toolbox page
+struct PluginPageEntry {
+    std::string path;
+    PluginUIType type;
+    QCheckBox* checkBox = nullptr;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -35,26 +44,32 @@ private:
 
     std::shared_ptr<Device> currentCamera;
 
+    // Plugin page tracking: path -> entry info
+    std::unordered_map<std::string, PluginPageEntry> pluginPageEntries;
+    // For engine checkbox exclusivity
+    std::vector<QCheckBox*> engineCheckboxes;
+
     void showCacheErrorMessage();
     void setControlsTable(std::unordered_map<std::string, std::string> table);
-    void initDynamicUi(shared_ptr<std::vector<RUI::UiPage>> pages);
+    void initDynamicUi(std::shared_ptr<std::vector<RUI::UiPage>> pages);
     void initTrackerDynamicUi(std::unordered_map<std::string, RUI::UiPage>* pages);
     void connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr);
-    void addEngineFile();
-    void switchActiveEngine(const QString& engine);
-    void updateEnginesCombo(const std::set<std::string> &names);
     void setRenderApi();
     void initialize();
-    void setVideoDevices(std::vector<CameraInfo> cameras);
-    void startCamera(std::shared_ptr<Device> camera);
-    void setActiveCamera(CameraInfo camera);
-    void setActiveTracker(TrackerInfo info);
-    void trackerChanged(const QString& tracker);
-    void updateTrackersCombo(const std::set<std::string> &names);
     void initTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table);
     void updateTrackerTable();
-    void uiAddPlugin(std::string name);
-    void uiRemovePlugin();
+
+    // Plugin UI (all types)
+    void uiAddPluginEntry(PluginUIInfo info);
+    void uiRemovePluginEntry(std::string path);
+    void uiSetPluginActive(std::string path);
+    void uiSetPluginInactive(std::string path);
+    void uiSetPluginName(std::string path, std::string pluginName);  // for when name becomes known after loading
+
+    // Adding dialogs helpers
+    void addEnginePlugin();
+    void addTrackerPlugin();
+    void addGenPlugin();
 
     QTimer* _updateTimer;
     std::unordered_map<std::string, std::shared_ptr<void>> *_trackerTableCache;
@@ -66,12 +81,9 @@ private:
 private slots:
     void onNewFileClicked();
     void onSaveFileClicked();
-    void cameraChanged();
-    void onFrameReceived(const QByteArray &jpegData);
-    void addTrackers();
-    void startTracker();
-    void stopTracker();
     void addPlugin();
     void removePlugin();
+    void reloadPlugin();
+    void reloadAllPlugins();
 };
 #endif // MAINWINDOW_H

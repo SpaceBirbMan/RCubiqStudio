@@ -9,6 +9,10 @@
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <memory>
+#include <mutex>
+#include <vector>
+#include <string>
+#include <utility>
 
 #include <bgfx/bgfx.h>
 #include <bx/bx.h>
@@ -18,6 +22,7 @@
 
 class ControlLayer;
 class EngineManager;
+class VirtualCamera;
 
 class ViewportWidget : public QWidget {
     Q_OBJECT
@@ -34,6 +39,12 @@ protected:
     QPaintEngine* paintEngine() const override;
     void paintEvent(QPaintEvent*) override;
     void sendHandlers();
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private slots:
     void paintFrame();
@@ -46,16 +57,31 @@ private:
     ControlLayer* clptr = nullptr;
     std::function<void()> m_tickCallback;
     std::vector<std::function<void()>>* ren_pip_ptr;
+    std::deque<ViewportCommand> commandQueue {};
 
     std::shared_ptr<void> renderContext;
     bool m_initialized = false;
     void* eng_receiver = nullptr;
+
+    // Pending engine deletes: engine must be destroyed on main thread because bgfx::shutdown
+    // must be called from the thread that called bgfx::init (the render/main thread).
+    struct PendingEngineDelete {
+        IModel*     engine;
+        std::string path;
+    };
+    std::vector<PendingEngineDelete> _pendingEngineDeletes;
+    std::mutex                       _pendingDeleteMutex;
 
     const std::string name = "ViewportWidget";
 
     void timerStart(std::function<void()> fn);
     void initialize();
     void setReceiver(EngineManager* r);
+    void updateViewportSize(int w, int h);
+    void scheduleEngineDelete(std::pair<IModel*, std::string> info);
+
+    int viewport_size[2] {0, 0};
+    VirtualCamera* m_vcam = nullptr;
 
 };
 

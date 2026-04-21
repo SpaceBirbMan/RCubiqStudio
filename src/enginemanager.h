@@ -2,6 +2,7 @@
 #define ENGINEMANAGER_H
 
 #include <vector>
+#include <unordered_map>
 #include "appcore.h"
 #include <set>
 #include "shorts.h"
@@ -23,13 +24,12 @@ public:
 
 private:
 
-
-
     AppCore* acptr;
 
-    EngineFuncs currentEngineFunctions; // указывает на функцию входа в код движка (main в движке)
+    std::unordered_map<std::string, IModel*> engines;   // path -> instance
+    std::string activeEnginePath;                        // currently active engine path
+    std::string pendingResolutionPath;                   // path being resolved right now
 
-    IModel* engine;
     std::function<void()> tickWrapper = nullptr;
     void* viewport = nullptr;
 
@@ -41,19 +41,24 @@ private:
 
     nlohmann::json serializeCache() const override {
         nlohmann::json j = {
-            {"enginesRegistry", enginesRegistry}
+            {"enginesRegistry", enginesRegistry},
+            {"activeEnginePath", activeEnginePath}
         };
         return j;
     }
 
     void deserializeCache(const nlohmann::json& data) override {
         enginesRegistry = data["enginesRegistry"];
+        if (data.contains("activeEnginePath"))
+            activeEnginePath = data["activeEnginePath"];
     }
 
     void preInitialize();
     void initialize();
     void funcsTableResolvingRequest();
     void activateEngine(std::vector<void*> pointers);
+    void activateEngineByPath(std::string path);
+    void removeEngine(std::string path);
     void setFuncs(funcMap map);
     void getActiveFrames();
     void addNames(std::vector<std::string> names);
