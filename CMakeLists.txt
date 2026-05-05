@@ -15,7 +15,7 @@ find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Quick QuickWidgets Lin
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2 Quick3D)
 find_package(PkgConfig REQUIRED)
 
-set(TS_FILES M3_ru_RU.ts)
+set(M3_TS_RU ${CMAKE_SOURCE_DIR}/i18n/M3_ru_RU.ts)
 set(QT_CREATOR_SKIP_MAINTENANCE_TOOL_PROVIDER ON)
 
 set(CMAKE_AUTOUIC_SEARCH_PATHS
@@ -50,16 +50,64 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ${PROJECT_SOURCES}
     )
 
-    qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 else()
     if(ANDROID)
         add_library(M3 SHARED ${PROJECT_SOURCES})
     else()
         add_executable(M3 ${PROJECT_SOURCES})
     endif()
-
-    qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 endif()
+
+# --- i18n: lrelease в CMake, явная зависимость от .ts (правки в Linguist сразу попадают в .qm) ---
+# qt_create_translation часто не пересобирал .qm при одном лишь изменении .ts.
+if(QT_VERSION_MAJOR GREATER_EQUAL 6)
+    find_program(M3_LRELEASE_TOOL NAMES lrelease-qt6 lrelease
+        HINTS ${Qt6_DIR}/../../../bin ${Qt6_DIR}/../../bin
+        DOC "Qt6 lrelease")
+    find_program(M3_LUPDATE_TOOL NAMES lupdate-qt6 lupdate
+        HINTS ${Qt6_DIR}/../../../bin ${Qt6_DIR}/../../bin
+        DOC "Qt6 lupdate")
+else()
+    find_program(M3_LRELEASE_TOOL NAMES lrelease-qt5 lrelease
+        HINTS ${Qt5_DIR}/../../../bin ${Qt5_DIR}/../../bin
+        DOC "Qt5 lrelease")
+    find_program(M3_LUPDATE_TOOL NAMES lupdate-qt5 lupdate
+        HINTS ${Qt5_DIR}/../../../bin
+        DOC "Qt5 lupdate")
+endif()
+if(NOT M3_LRELEASE_TOOL)
+    message(FATAL_ERROR "lrelease not found (install Qt Linguist / Qt tools, or add to PATH).")
+endif()
+
+set(M3_RU_QM ${CMAKE_CURRENT_BINARY_DIR}/M3_ru_RU.qm)
+add_custom_command(
+    OUTPUT ${M3_RU_QM}
+    COMMAND ${M3_LRELEASE_TOOL} ${M3_TS_RU} -qm ${M3_RU_QM}
+    DEPENDS ${M3_TS_RU}
+    COMMENT "lrelease: i18n/M3_ru_RU.ts -> M3_ru_RU.qm (depends on .ts; edit strings in Qt Linguist)"
+    VERBATIM
+)
+add_custom_target(M3_lrelease_qm ALL DEPENDS ${M3_RU_QM})
+add_dependencies(M3 M3_lrelease_qm)
+set(QM_FILES ${M3_RU_QM})
+
+# Обновить .ts из исходников (сканируются каталоги, без перечисления каждого .cpp)
+#   cmake --build <dir> --target M3_lupdate
+if(M3_LUPDATE_TOOL)
+    add_custom_target(M3_lupdate
+        COMMAND ${M3_LUPDATE_TOOL} -locations relative
+            "${CMAKE_SOURCE_DIR}/src"
+            "${CMAKE_SOURCE_DIR}/ui"
+            -ts ${M3_TS_RU}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "lupdate: перенос tr()/ui в M3_ru_RU.ts (после смены строк в коде)"
+        VERBATIM
+    )
+endif()
+
+# .ts в проекте Qt Creator: только исходник, не линкуется
+target_sources(M3 PRIVATE ${M3_TS_RU})
+set_source_files_properties(${M3_TS_RU} PROPERTIES HEADER_FILE_ONLY ON)
 
 # --- Библиотеки и зависимости ---
 add_library(miniaudio INTERFACE)
@@ -108,7 +156,20 @@ target_link_libraries(
 target_link_libraries(M3 PRIVATE ws2_32)
 
 if(WIN32)
-    target_link_libraries(M3 PRIVATE winmm setupapi)
+    # strmiids: CLSID_VideoInputDeviceCategory, CLSID_SystemDeviceEnum, etc. (DShow)
+    # ole32/oleaut32: COM (CoCreateInstance, VariantInit) — #pragma comment(lib) is MSVC-only
+    # uuid: IID_* link tables on some MinGW setups
+    target_link_libraries(
+        M3 PRIVATE
+        winmm
+        setupapi
+        crypt32
+        strmiids
+        ole32
+        oleaut32
+        uuid
+        shell32
+    )
 endif()
 
 file(GLOB_RECURSE VERTEX_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.vs.sc")
@@ -237,4 +298,25 @@ install(TARGETS M3
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(M3)
+endif()
+
+foreach(_qm IN LISTS QM_FILES)
+    add_custom_command(
+        TARGET M3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:M3>/i18n"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_qm}" "$<TARGET_FILE_DIR:M3>/i18n/"
+        VERBATIM
+    )
+endforeach()
+
+# Optional: copy akvirtualcamera C API next to the executable (same folder the app loads vcam from).
+set(M3_AKVCAM_CAPI_DLL "${CMAKE_SOURCE_DIR}/../akvirtualcamera/build-mingw64/build/x64/libvcam_capi.dll")
+if(WIN32 AND EXISTS "${M3_AKVCAM_CAPI_DLL}")
+    add_custom_command(
+        TARGET M3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${M3_AKVCAM_CAPI_DLL}" "$<TARGET_FILE_DIR:M3>"
+        COMMENT "Copying libvcam_capi.dll next to M3"
+    )
 endif()

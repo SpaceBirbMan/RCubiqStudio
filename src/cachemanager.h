@@ -20,7 +20,9 @@ public:
 
     void saveCache();
 
+    /// Раздача кеша модулям
     void distributeCache();
+    /// Сбор кеша у модулей
     void pickCache();
 
     nlohmann::json getCache() { return cache; }
@@ -29,6 +31,7 @@ private:
 
     void writeCache(const CacheObject& object);
 
+    // Штуки для чтения/записи кеша
     nlohmann::json cache = nlohmann::json::object();
     std::unordered_map<std::string, std::function<void(const nlohmann::json&)>> subscribers_deserfns {};
     std::unordered_map<std::string, std::function<nlohmann::json()>> subscribers_serfns {};

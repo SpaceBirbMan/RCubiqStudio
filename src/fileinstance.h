@@ -5,7 +5,7 @@
 #include <any>
 #include <vector>
 
-class FileInstance
+class FileInstance // не актуально
 {
 public:
     FileInstance() = default;

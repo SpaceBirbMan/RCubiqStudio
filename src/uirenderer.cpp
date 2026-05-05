@@ -10,6 +10,66 @@
 #include <QTimer>
 #include <QMouseEvent>
 #include <QScrollArea>
+#include <QSizePolicy>
+#include <QToolBox>
+#include <QEvent>
+#include <algorithm>
+#include <memory>
+#include <vector>
+
+namespace {
+
+/// Qt wraps each QToolBox page in a QScrollArea (qtbase qtoolbox.cpp). That inner vertical
+/// scrollbar only shrinks the page; we turn it off and size the QScrollArea to the page's
+/// full layout height so the section opens to its natural length. Outer RUI UiScrollBox stays.
+static void configureQtToolBoxPageScrollAreas(QToolBox* tb) {
+    if (!tb) return;
+    const QList<QScrollArea*> areas =
+        tb->findChildren<QScrollArea*>(QString(), Qt::FindDirectChildrenOnly);
+    for (QScrollArea* sa : areas) {
+        sa->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        sa->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        sa->setWidgetResizable(true);
+        QWidget* w = sa->widget();
+        if (!w) continue;
+        if (QLayout* lay = w->layout())
+            lay->activate();
+        w->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        const int ih = std::max(w->minimumSizeHint().height(), 1);
+        w->setMinimumHeight(ih);
+        // Without this, Qt keeps a short viewport and clips; min height grows the page row.
+        sa->setMinimumHeight(ih);
+        sa->setMaximumHeight(QWIDGETSIZE_MAX);
+        sa->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    }
+}
+
+/// Keeps per-page scroll policies and minimum heights in sync after resize / tab change / rebuild.
+class ToolBoxPageStretcher final : public QObject {
+public:
+    explicit ToolBoxPageStretcher(QToolBox* tb) : QObject(tb), m_tb(tb) {
+        connect(tb, &QToolBox::currentChanged, this, [this](int) { apply(); });
+        tb->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == m_tb && (event->type() == QEvent::Resize || event->type() == QEvent::Show
+                                || event->type() == QEvent::LayoutRequest))
+            apply();
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    void apply() {
+        if (!m_tb) return;
+        configureQtToolBoxPageScrollAreas(m_tb);
+    }
+
+    QToolBox* m_tb = nullptr;
+};
+
+} // namespace
 
 ///////////////////////////////////////////////////////////////
 //  helpers
@@ -28,6 +88,61 @@ static Qt::Orientation toQtOrientation(ProgressBarOrientation orient) {
     return (orient == VERTICAL) ? Qt::Vertical : Qt::Horizontal;
 }
 
+namespace {
+
+// Double-click on editable UiTitle label → inline QLineEdit (cannot use `new class` in new-expr on all compilers)
+class TitleEditFilter : public QObject {
+public:
+    QPointer<QLabel>      lbl;
+    QPointer<QHBoxLayout> hlay;
+    RUI::UiTitle*         node = nullptr;
+
+    TitleEditFilter(QLabel* l, QHBoxLayout* h, RUI::UiTitle* n, QObject* parent)
+        : QObject(parent), lbl(l), hlay(h), node(n) {}
+
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched != lbl.data() || event->type() != QEvent::MouseButtonDblClick)
+            return false;
+        if (!lbl || !hlay || !node)
+            return false;
+
+        auto* le = new QLineEdit(lbl->text());
+        le->selectAll();
+        const int idx = hlay->indexOf(lbl);
+        hlay->removeWidget(lbl);
+        lbl->hide();
+        hlay->insertWidget(idx, le);
+        le->setFocus();
+
+        auto committed = std::make_shared<bool>(false);
+        auto commitEdit = [this, le, committed]() {
+            if (*committed)
+                return;
+            const int i = hlay ? hlay->indexOf(le) : -1;
+            if (i < 0)
+                return;
+            *committed = true;
+            const QString newText = le->text();
+            node->setText(newText.toStdString());
+            if (lbl)
+                lbl->setText(newText);
+            hlay->removeWidget(le);
+            le->deleteLater();
+            if (lbl) {
+                hlay->insertWidget(i, lbl);
+                lbl->show();
+            }
+            if (node->onTextEdited)
+                node->onTextEdited(newText.toStdString());
+        };
+        QObject::connect(le, &QLineEdit::returnPressed, commitEdit);
+        QObject::connect(le, &QLineEdit::editingFinished, commitEdit);
+        return true;
+    }
+};
+
+} // namespace
+
 ///////////////////////////////////////////////////////////////
 //  Render dispatcher
 ///////////////////////////////////////////////////////////////
@@ -41,44 +156,66 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
     else if (auto* ctx = dynamic_cast<UiContextMenu*>(elem)) result = renderContextMenu(ctx);
     else if (auto* win = dynamic_cast<UiWindow*>(elem)) result = renderWindow(win);
     else if (auto* fd = dynamic_cast<UiFileDialog*>(elem)) result = renderFileDialog(fd);
+    else if (auto* cpi = dynamic_cast<UiColorPicker*>(elem)) result = renderColorPicker(cpi);
     else if (auto* tree = dynamic_cast<UiTreeView*>(elem)) result = renderTreeView(tree);
     else if (auto* list = dynamic_cast<UiListView*>(elem)) result = renderListView(list);
     else if (auto* grid = dynamic_cast<UiGridView*>(elem)) result = renderGridView(grid);
     else if (auto* canvas = dynamic_cast<UiCanvas*>(elem)) result = renderCanvas(canvas);
+    else if (auto* tb = dynamic_cast<UiToolBox*>(elem)) result = renderToolBox(tb);
     else if (auto* scroll = dynamic_cast<UiScrollBox*>(elem)) result = renderScrollBox(scroll);
     else if (auto* c = dynamic_cast<UiContainer*>(elem)) result = renderContainer(c);
     else if (auto* t = dynamic_cast<UiTitle*>(elem)) {
-        auto* l = new QLabel(QString::fromStdString(t->getText()));
-        QFont f = l->font();
-        switch (t->getFormat()) {
-        case ITALIC: f.setItalic(true); break;
-        case BOLD: f.setBold(true); break;
-        case UNDERLINE: f.setUnderline(true); break;
-        default: break;
-        }
-        l->setFont(f);
-        
-        QPointer<QLabel> lPtr = l;
-        t->onChange = [lPtr, t]() {
-            if (lPtr) {
-                lPtr->setText(QString::fromStdString(t->getText()));
-                QFont f = lPtr->font();
-                f.setItalic(t->getFormat() == ITALIC);
-                f.setBold(t->getFormat() == BOLD);
-                f.setUnderline(t->getFormat() == UNDERLINE);
-                lPtr->setFont(f);
-            }
+        auto applyFont = [](QLabel* lbl, TextFormat fmt) {
+            QFont f = lbl->font();
+            f.setItalic(fmt == ITALIC);
+            f.setBold(fmt == BOLD);
+            f.setUnderline(fmt == UNDERLINE);
+            lbl->setFont(f);
         };
-        result = l;
-    }
-    else if (auto* b = dynamic_cast<UiButton*>(elem)) {
-        auto* btn = new QPushButton(QString::fromStdString(b->text));
-        if (b->onClick) {
-            QObject::connect(btn, &QPushButton::clicked, [cb = b->onClick]() { cb(); });
+
+        if (t->editable) {
+            // Wrap label + inline edit in a stacked widget-like container
+            auto* container = new QWidget;
+            auto* hlay = new QHBoxLayout(container);
+            hlay->setContentsMargins(0, 0, 0, 0);
+
+            auto* lbl = new QLabel(QString::fromStdString(t->getText()));
+            applyFont(lbl, t->getFormat());
+            hlay->addWidget(lbl);
+            hlay->addStretch();
+
+            lbl->installEventFilter(new TitleEditFilter(lbl, hlay, t, lbl));
+
+            QPointer<QLabel> lPtr = lbl;
+            t->onChange = [lPtr, t, applyFont]() {
+                if (lPtr) {
+                    lPtr->setText(QString::fromStdString(t->getText()));
+                    applyFont(lPtr, t->getFormat());
+                }
+            };
+            result = container;
+        } else {
+            auto* l = new QLabel(QString::fromStdString(t->getText()));
+            applyFont(l, t->getFormat());
+            QPointer<QLabel> lPtr = l;
+            t->onChange = [lPtr, t, applyFont]() {
+                if (lPtr) {
+                    lPtr->setText(QString::fromStdString(t->getText()));
+                    applyFont(lPtr, t->getFormat());
+                }
+            };
+            result = l;
         }
-        QPointer<QPushButton> bPtr = btn;
-        b->onChange = [bPtr, b]() { if(bPtr) bPtr->setText(QString::fromStdString(b->text)); };
-        result = btn;
+    }
+    // UiCheckBox before UiButton / UiToggleableButton (inheritance)
+    else if (auto* cb = dynamic_cast<UiCheckBox*>(elem)) {
+        auto* ch = new QCheckBox(QString::fromStdString(cb->text));
+        ch->setChecked(cb->active);
+        if (cb->onToggle)
+            QObject::connect(ch, &QCheckBox::toggled, [cbfn = cb->onToggle](bool v){ cbfn(v); });
+        QPointer<QCheckBox> cPtr = ch;
+        cb->onChange = [cPtr, cb]() { if(cPtr) { cPtr->setText(QString::fromStdString(cb->text)); cPtr->setChecked(cb->active); } };
+        result = ch;
     }
     else if (auto* tb = dynamic_cast<UiToggleableButton*>(elem)) {
         auto* btn = new QPushButton(QString::fromStdString(tb->text));
@@ -91,14 +228,14 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
         tb->onChange = [bPtr, tb]() { if(bPtr) { bPtr->setText(QString::fromStdString(tb->text)); bPtr->setChecked(tb->active); } };
         result = btn;
     }
-    else if (auto* cb = dynamic_cast<UiCheckBox*>(elem)) {
-        auto* ch = new QCheckBox(QString::fromStdString(cb->text));
-        ch->setChecked(cb->active);
-        if (cb->onToggle)
-            QObject::connect(ch, &QCheckBox::toggled, [cbfn = cb->onToggle](bool v){ cbfn(v); });
-        QPointer<QCheckBox> cPtr = ch;
-        cb->onChange = [cPtr, cb]() { if(cPtr) { cPtr->setText(QString::fromStdString(cb->text)); cPtr->setChecked(cb->active); } };
-        result = ch;
+    else if (auto* b = dynamic_cast<UiButton*>(elem)) {
+        auto* btn = new QPushButton(QString::fromStdString(b->text));
+        if (b->onClick) {
+            QObject::connect(btn, &QPushButton::clicked, [cb = b->onClick]() { cb(); });
+        }
+        QPointer<QPushButton> bPtr = btn;
+        b->onChange = [bPtr, b]() { if(bPtr) bPtr->setText(QString::fromStdString(b->text)); };
+        result = btn;
     }
     else if (auto* in = dynamic_cast<UiInputField*>(elem)) {
         auto* le = new QLineEdit;
@@ -338,13 +475,20 @@ QWidget* UiRenderer::renderContainer(UiContainer* container) {
 
     w->setLayout(lay);
 
-    for (const auto& ch : container->getChildrens()) {
-        QWidget* child = renderElement(ch.get());
-        if (child) lay->addWidget(child);
-    }
-
-    if (container->getComposition() != FREE) {
-        lay->addStretch();
+    {
+        bool fillsVerticalSpace = false;
+        for (const auto& ch : container->getChildrens()) {
+            QWidget* child = renderElement(ch.get());
+            if (!child) continue;
+            // Only outer UiScrollBox should grab free height; UiToolBox uses its natural size
+            // inside that scroll (or elsewhere).
+            const int sf = dynamic_cast<RUI::UiScrollBox*>(ch.get()) ? 1 : 0;
+            if (sf) fillsVerticalSpace = true;
+            lay->addWidget(child, sf);
+        }
+        if (!fillsVerticalSpace && container->getComposition() != FREE) {
+            lay->addStretch();
+        }
     }
 
     QPointer<QWidget> wPtr = w;
@@ -356,11 +500,15 @@ QWidget* UiRenderer::renderContainer(UiContainer* container) {
                 if (item->widget()) item->widget()->deleteLater();
                 delete item;
             }
+            bool fillsVerticalSpace = false;
             for (const auto& ch : container->getChildrens()) {
                 QWidget* child = renderElement(ch.get());
-                if (child) layPtr->addWidget(child);
+                if (!child) continue;
+                const int sf = dynamic_cast<RUI::UiScrollBox*>(ch.get()) ? 1 : 0;
+                if (sf) fillsVerticalSpace = true;
+                layPtr->addWidget(child, sf);
             }
-            if (container->getComposition() != FREE) {
+            if (!fillsVerticalSpace && container->getComposition() != FREE) {
                 layPtr->addStretch();
             }
         }
@@ -386,17 +534,22 @@ QWidget* UiRenderer::renderScrollBox(UiScrollBox* scroll) {
     sa->setVerticalScrollBarPolicy(mapPolicy(scroll->getSliderVPolicy()));
 
     auto* content = new QWidget;
+    // Height from children so the outer QScrollArea scrolls the whole block (e.g. toolbox).
+    content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto* lay = makeLayout(scroll->getComposition());
     content->setLayout(lay);
 
-    for (const auto& ch : scroll->getChildrens()) {
-        QWidget* child = renderElement(ch.get());
-        if (child) lay->addWidget(child);
-    }
-    
-    if (scroll->getComposition() != FREE) {
-        lay->addStretch();
-    }
+    auto populateScrollInner = [scroll](QBoxLayout* targetLay) {
+        for (const auto& ch : scroll->getChildrens()) {
+            QWidget* child = renderElement(ch.get());
+            if (child) {
+                child->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+                targetLay->addWidget(child, 0);
+            }
+        }
+        // No trailing stretch: it would pin content to viewport height and hide the outer scrollbar.
+    };
+    populateScrollInner(lay);
 
     sa->setWidget(content);
 
@@ -404,20 +557,14 @@ QWidget* UiRenderer::renderScrollBox(UiScrollBox* scroll) {
     QPointer<QWidget> cPtr = content;
     QPointer<QBoxLayout> layPtr = lay;
 
-    scroll->onChange = [saPtr, cPtr, layPtr, scroll]() {
+    scroll->onChange = [saPtr, cPtr, layPtr, scroll, populateScrollInner]() {
         if (saPtr && cPtr && layPtr) {
             QLayoutItem* item;
             while ((item = layPtr->takeAt(0)) != nullptr) {
                 if (item->widget()) item->widget()->deleteLater();
                 delete item;
             }
-            for (const auto& ch : scroll->getChildrens()) {
-                QWidget* child = renderElement(ch.get());
-                if (child) layPtr->addWidget(child);
-            }
-            if (scroll->getComposition() != FREE) {
-                layPtr->addStretch();
-            }
+            populateScrollInner(layPtr);
             
             // Re-apply policies in case they changed
             auto mapP = [](SliderPolicy p) {
@@ -646,6 +793,71 @@ QWidget* UiRenderer::renderFileDialog(UiFileDialog* fd) {
     return btn;
 }
 
+namespace {
+
+// TesterV1 / bgfx: 0xRRGGBBAA
+static QColor u32RgbaToQColor(uint32_t v) {
+    return QColor(int((v >> 24) & 0xFF), int((v >> 16) & 0xFF), int((v >> 8) & 0xFF), int(v & 0xFF));
+}
+
+static uint32_t qColorToU32Rgba(const QColor& c) {
+    return (uint32_t(c.red()) << 24) | (uint32_t(c.green()) << 16) | (uint32_t(c.blue()) << 8) | uint32_t(c.alpha());
+}
+
+} // namespace
+
+QWidget* UiRenderer::renderColorPicker(UiColorPicker* cp) {
+    if (!cp) return nullptr;
+
+    auto*    wrap = new QWidget;
+    auto*    hlay = new QHBoxLayout(wrap);
+    hlay->setContentsMargins(0, 0, 0, 0);
+    auto*    swatch = new QFrame(wrap);
+    auto*    btn    = new QPushButton(QString::fromStdString(cp->buttonText), wrap);
+    const auto kSwatchName = QStringLiteral("M3UiColorSwatch");
+    swatch->setObjectName(kSwatchName);
+    swatch->setFrameShape(QFrame::StyledPanel);
+    swatch->setFixedSize(44, 24);
+
+    hlay->addWidget(swatch);
+    hlay->addWidget(btn, 1);
+
+    auto setSwatchFromU32 = [swatch, kSwatchName](uint32_t v) {
+        const int  r   = int((v >> 24) & 0xFF);
+        const int  g   = int((v >> 16) & 0xFF);
+        const int  b   = int((v >> 8) & 0xFF);
+        const int  a   = int(v & 0xFF);
+        const double af = a / 255.0;
+        swatch->setStyleSheet(
+            QStringLiteral("QFrame#%1 { background-color: rgba(%2,%3,%4,%5); border: 1px solid #666; }")
+                .arg(kSwatchName, QString::number(r), QString::number(g), QString::number(b), QString::number(af, 'f', 3)));
+    };
+
+    setSwatchFromU32(cp->color);
+
+    QObject::connect(btn, &QPushButton::clicked, [setSwatchFromU32, btn, cp]() {
+        const QColor start = u32RgbaToQColor(cp->color);
+        const QColor pick  = QColorDialog::getColor(
+            start, btn, QString(),
+            QColorDialog::ColorDialogOptions(QColorDialog::ShowAlphaChannel | QColorDialog::DontUseNativeDialog));
+        if (!pick.isValid())
+            return;
+        cp->color = qColorToU32Rgba(pick);
+        setSwatchFromU32(cp->color);
+        if (cp->onColorChanged)
+            cp->onColorChanged(cp->color);
+    });
+
+    QPointer<QPushButton> bPtr = btn;
+    cp->onChange = [bPtr, cp, setSwatchFromU32]() {
+        if (bPtr)
+            bPtr->setText(QString::fromStdString(cp->buttonText));
+        setSwatchFromU32(cp->color);
+    };
+
+    return wrap;
+}
+
 ///////////////////////////////////////////////////////////////
 //  Canvas rendering
 ///////////////////////////////////////////////////////////////
@@ -655,8 +867,9 @@ class QtCanvasWidget : public QWidget {
     QTimer* timer;
 public:
     QtCanvasWidget(UiCanvas* node, QWidget* parent = nullptr) : QWidget(parent), canvasNode(node) {
-        setMinimumSize(320, 240);
-        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        setMinimumSize(96, 96);
+        setMaximumSize(480, 480);
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         setMouseTracking(true); // Enable mouse move events without clicking
         
         // Setup a timer to constantly repaint the canvas
@@ -666,6 +879,8 @@ public:
         });
         timer->start(33); // ~30 fps
     }
+
+    QSize sizeHint() const override { return QSize(280, 280); }
 
 protected:
     QPoint m_mousePos = QPoint(-1, -1);
@@ -747,7 +962,57 @@ protected:
 
 QWidget* UiRenderer::renderCanvas(UiCanvas* canvas) {
     if (!canvas) return nullptr;
-    return new QtCanvasWidget(canvas);
+    // QVBoxLayout gives children the full tab width; without a row + side stretches the canvas
+    // would stretch horizontally and widen the whole right dock. Center a bounded square instead.
+    auto* row = new QWidget;
+    auto* h = new QHBoxLayout(row);
+    h->setContentsMargins(0, 0, 0, 0);
+    h->addStretch(1);
+    auto* cv = new QtCanvasWidget(canvas);
+    h->addWidget(cv, 0, Qt::AlignCenter);
+    h->addStretch(1);
+    return row;
+}
+
+///////////////////////////////////////////////////////////////
+//  ToolBox rendering
+///////////////////////////////////////////////////////////////
+
+QWidget* UiRenderer::renderToolBox(UiToolBox* toolbox) {
+    if (!toolbox) return nullptr;
+
+    auto* tb = new QToolBox;
+    tb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    for (const auto& page : toolbox->pages) {
+        QWidget* content = UiRenderer::renderContainer(page.content.get());
+        if (content) {
+            content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+            tb->addItem(content, QString::fromStdString(page.title));
+        }
+    }
+    new ToolBoxPageStretcher(tb);
+    configureQtToolBoxPageScrollAreas(tb);
+
+    QPointer<QToolBox> tbPtr = tb;
+    toolbox->onChange = [tbPtr, toolbox]() {
+        if (!tbPtr) return;
+        while (tbPtr->count() > 0) {
+            QWidget* w = tbPtr->widget(0);
+            tbPtr->removeItem(0);
+            if (w) w->deleteLater();
+        }
+        for (const auto& page : toolbox->pages) {
+            QWidget* content = UiRenderer::renderContainer(page.content.get());
+            if (content) {
+                content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+                tbPtr->addItem(content, QString::fromStdString(page.title));
+            }
+        }
+        configureQtToolBoxPageScrollAreas(tbPtr);
+        tbPtr->updateGeometry();
+    };
+
+    return tb;
 }
 
 ///////////////////////////////////////////////////////////////
@@ -759,7 +1024,9 @@ void UiRenderer::renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tab
 
     QWidget* content = renderPage(root.get());
     if (content) {
-        tabTarget->insertTab(root->getIndex(), content, QString::fromStdString(root->getTitle()));
+        // Append in order; UiPage::getIndex() is often unset (0 for all) and must not be used as tab slot.
+        const int idx = tabTarget->count();
+        tabTarget->insertTab(idx, content, QString::fromStdString(root->getTitle()));
     }
 }
 

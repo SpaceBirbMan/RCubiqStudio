@@ -2,7 +2,7 @@
 #define RENDERAPI_H
 
 
-class Renderer {
+class Renderer { // это не надо
 
 public:
 

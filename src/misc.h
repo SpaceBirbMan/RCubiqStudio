@@ -5,9 +5,19 @@
 #include <string>
 #include <functional>
 #include <any>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <deque>
 #include "abstractuinodes.h"
+
+// Общая синхронизация для слотов шины, которые плагины меняют при работе/выгрузке,
+// а хост (движок) читает из другого потока (например control_table).
+namespace M3Stream {
+inline std::mutex& streamBusMutex() {
+    static std::mutex m;
+    return m;
+}
+}
 
 using json = nlohmann::json;
 using payload = std::vector<uint8_t>; //байт-буфер для payload
@@ -123,6 +133,7 @@ public:
     ITracker() = default;
     ITracker(IEventManager* eventManager, IDataBus* dataBus) {}
     virtual ~ITracker() = default;
+    /// Остановить потоки и снять с шины все указатели на память этого модуля до выгрузки DLL.
     virtual void shutdown() {}
     virtual bool start() = 0;
     virtual void stop() = 0;
@@ -168,6 +179,7 @@ public:
     IGenPlugin() = default;
     IGenPlugin(IEventManager* eventManager, IDataBus* dataBus) {}
     virtual ~IGenPlugin() = default;
+    /// Снять привязки к шине (control_table и т.д.) до выгрузки DLL — иначе остаются висячие указатели.
     virtual void shutdown() {}
     virtual bool isActive() const { return true; }
     virtual void setDataBus(IDataBus* db) = 0;
@@ -175,9 +187,12 @@ public:
 };
 
 using CreateEngine = IModel* (*)(IEventManager*, IDataBus*);
+using DestroyEngine = void (*)(IModel*);
 using CreateRenderer = IRenderer* (*)(void);
 using CreateTracker = ITracker* (*)(IEventManager*, IDataBus*);
+using DestroyTracker = void (*)(ITracker*);
 using CreatePlugin = IGenPlugin* (*)(IEventManager*, IDataBus*);
+using DestroyPlugin = void (*)(IGenPlugin*);
 
 struct LibMeta {
     std::string path;

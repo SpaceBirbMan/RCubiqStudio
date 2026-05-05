@@ -22,6 +22,8 @@
 #include <QStandardItem>
 #include <QPixmap>
 #include <QFileDialog>
+#include <QColorDialog>
+#include <QFrame>
 #include <QMenu>
 #include <QMenuBar>
 
@@ -41,8 +43,10 @@ public:
     static QWidget* renderGridView(UiGridView* grid);
     static QWidget* renderWindow(UiWindow* win);
     static QWidget* renderFileDialog(UiFileDialog* fd);
+    static QWidget* renderColorPicker(UiColorPicker* cp);
     static QWidget* renderContextMenu(UiContextMenu* ctx);
     static QWidget* renderCanvas(UiCanvas* canvas);
+    static QWidget* renderToolBox(UiToolBox* toolbox);
 
     static void renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget);
     static void renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget);

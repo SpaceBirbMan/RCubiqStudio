@@ -3,6 +3,27 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
+#ifdef _WIN32
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+
+#define byte win_byte_override
+#include <windows.h>
+#include <dshow.h>
+#include <strmif.h>
+#undef byte
+
+#include <algorithm>
+#include <cwctype>
+#include <vector>
+#pragma comment(lib, "strmiids.lib")
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "oleaut32.lib")
+#endif
+
 // Вспомогательная функция для конвертации UTF-16/UTF-32 в UTF-8
 static std::string wideToUtf8(const wchar_t *wstr)
 {
@@ -257,31 +278,211 @@ void DeviceManager::initialize()
     this->acptr->getEventManager().sendMessage(AppMessage(name, "start_hid_listeners", 0));
 }
 
+#ifdef _WIN32
+namespace {
+
+// Enumerate DirectShow video input devices via ICreateDevEnum.  This is a
+// *lightweight* enumeration: it just reads the registry and queries the
+// device's IPropertyBag for FriendlyName / DevicePath — it does NOT
+// instantiate the filters, so camera driver DLLs (including our own
+// AkVirtualCamera.dll) are NOT loaded into the M3 process.
+struct DShowVideoDevice
+{
+    std::wstring friendlyName;
+    std::wstring devicePath;
+};
+
+std::vector<DShowVideoDevice> listDShowVideoDevices()
+{
+    std::vector<DShowVideoDevice> result;
+
+    // DShow wants COM initialised.  We ask for MTA; if the calling thread
+    // has already initialised COM in STA (common in Qt UI threads) we
+    // accept that silently — it's fine for the enumerator.
+    HRESULT coInitRc = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    const bool wasCoInitialised = SUCCEEDED(coInitRc);
+
+    ICreateDevEnum *pDevEnum = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum,
+                                  nullptr,
+                                  CLSCTX_INPROC_SERVER,
+                                  IID_ICreateDevEnum,
+                                  reinterpret_cast<void **>(&pDevEnum));
+    if (SUCCEEDED(hr) && pDevEnum) {
+        IEnumMoniker *pEnum = nullptr;
+        hr = pDevEnum->CreateClassEnumerator(CLSID_VideoInputDeviceCategory,
+                                             &pEnum,
+                                             0);
+        if (hr == S_OK && pEnum) {
+            IMoniker *pMoniker = nullptr;
+            while (pEnum->Next(1, &pMoniker, nullptr) == S_OK) {
+                IPropertyBag *pPropBag = nullptr;
+                if (SUCCEEDED(pMoniker->BindToStorage(nullptr,
+                                                     nullptr,
+                                                     IID_IPropertyBag,
+                                                     reinterpret_cast<void **>(&pPropBag)))
+                    && pPropBag) {
+                    DShowVideoDevice dev;
+                    VARIANT varName;
+                    VariantInit(&varName);
+                    if (SUCCEEDED(pPropBag->Read(L"FriendlyName",
+                                                 &varName,
+                                                 nullptr))
+                        && varName.vt == VT_BSTR
+                        && varName.bstrVal) {
+                        dev.friendlyName = varName.bstrVal;
+                    }
+                    VariantClear(&varName);
+
+                    VARIANT varPath;
+                    VariantInit(&varPath);
+                    if (SUCCEEDED(pPropBag->Read(L"DevicePath",
+                                                 &varPath,
+                                                 nullptr))
+                        && varPath.vt == VT_BSTR
+                        && varPath.bstrVal) {
+                        dev.devicePath = varPath.bstrVal;
+                    }
+                    VariantClear(&varPath);
+
+                    pPropBag->Release();
+                    result.push_back(std::move(dev));
+                }
+
+                pMoniker->Release();
+            }
+            pEnum->Release();
+        }
+
+        pDevEnum->Release();
+    }
+
+    if (wasCoInitialised)
+        CoUninitialize();
+
+    return result;
+}
+
+bool isLikelyVirtualCamera(const std::wstring &friendlyName,
+                           const std::wstring &devicePath)
+{
+    auto toLower = [](std::wstring s) {
+        std::transform(s.begin(),
+                       s.end(),
+                       s.begin(),
+                       [](wchar_t c) {
+                           return static_cast<wchar_t>(std::towlower(c));
+                       });
+        return s;
+    };
+
+    const std::wstring name = toLower(friendlyName);
+    const std::wstring path = toLower(devicePath);
+
+    // Hints that match virtual-camera providers we've seen in the wild.
+    // We include "rcq" specifically because this is the description the
+    // current user renamed their M3 / AkVCam device to.  Any real camera
+    // with one of these substrings in its name would also be skipped —
+    // in practice that's acceptable: real webcams don't use these names.
+    static const wchar_t *kVirtualHints[] = {
+        L"akvcam",
+        L"akvirtualcamera",
+        L"rcq",          // our user's renamed AkVCam device
+        L"virtualcam",
+        L"virtual camera",
+        L"obs virtual",
+        L"nvidia broadcast",
+        L"xsplit",
+        L"manycam",
+        L"snap camera",
+        L"droidcam",
+        L"iriun",
+        L"elgato virtual",
+    };
+
+    for (const wchar_t *hint : kVirtualHints) {
+        const std::wstring needle = hint;
+        if (!name.empty() && name.find(needle) != std::wstring::npos)
+            return true;
+        if (!path.empty() && path.find(needle) != std::wstring::npos)
+            return true;
+    }
+    return false;
+}
+
+} // namespace
+#endif // _WIN32
+
 std::vector<CameraInfo> DeviceManager::enumerateCameras(int maxIndex)
 {
     std::vector<CameraInfo> cameras;
 
-    for (int i = 0; i < maxIndex; ++i)
-    {
-        cv::VideoCapture cap(i, cv::CAP_ANY);
-        if (!cap.isOpened())
-        {
+#ifdef _WIN32
+    // List DShow cameras *without* instantiating their filters.  That keeps
+    // AkVirtualCamera.dll (and any other virtual-camera provider) out of
+    // M3's own process — loading it here would create a second IpcBridge
+    // next to the one the capi owns, fight over the same SharedMemory
+    // service lock, and crash M3.  We iterate by DShow enumeration index:
+    // OpenCV's CAP_DSHOW backend uses the exact same index order as
+    // ICreateDevEnum, so we can hand the index straight to VideoCapture.
+    const auto dshowDevices = listDShowVideoDevices();
+    const int dshowCount = static_cast<int>(dshowDevices.size());
+    const int limit = std::min(maxIndex, dshowCount);
+
+    for (int i = 0; i < limit; ++i) {
+        const auto &dev = dshowDevices[i];
+
+        if (isLikelyVirtualCamera(dev.friendlyName, dev.devicePath)) {
+            std::cout << "Skipping virtual camera at index " << i
+                      << " (" << wideToUtf8(dev.friendlyName.c_str()) << ")"
+                      << std::endl;
             continue;
         }
 
+        cv::VideoCapture cap(i, cv::CAP_DSHOW);
+        if (!cap.isOpened())
+            continue;
+
         CameraInfo info;
         info.index = i;
-        info.width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH)); // TODO: нужна настройка по размерам вебки
+        info.width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
         info.height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
         info.maxFps = cap.get(cv::CAP_PROP_FPS);
 
-        // TODO: Platform-specific name retrieval
-        info.name = "Camera #" + std::to_string(i) + " (" + std::to_string(info.width) + "x" + std::to_string(info.height) + ")";
+        const std::string friendly = wideToUtf8(dev.friendlyName.c_str());
+        if (!friendly.empty())
+            info.name = friendly;
+        else
+            info.name = "Camera #" + std::to_string(i);
+        info.name += " (" + std::to_string(info.width)
+                     + "x" + std::to_string(info.height) + ")";
+
         std::cout << info.name << " " << info.maxFps << std::endl;
 
         cap.release();
         cameras.push_back(info);
     }
+#else
+    for (int i = 0; i < maxIndex; ++i) {
+        cv::VideoCapture cap(i, cv::CAP_ANY);
+        if (!cap.isOpened())
+            continue;
+
+        CameraInfo info;
+        info.index = i;
+        info.width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
+        info.height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+        info.maxFps = cap.get(cv::CAP_PROP_FPS);
+
+        info.name = "Camera #" + std::to_string(i)
+                    + " (" + std::to_string(info.width)
+                    + "x" + std::to_string(info.height) + ")";
+        std::cout << info.name << " " << info.maxFps << std::endl;
+
+        cap.release();
+        cameras.push_back(info);
+    }
+#endif
 
     return cameras;
 }

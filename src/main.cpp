@@ -7,30 +7,48 @@
 #include "otherplugins.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QLocale>
 #include <QTranslator>
 #include <QSplashScreen>
 #include <QThread>
+#include <chrono>
 
 #include <QApplication>
 #include <QQuickView>
 #include <QQmlEngine>
 
 // todo: Метод, просящий модуль подписаться на определённое событие (можно ввести уровни доверия, чтобы нельзя было втыкать опасные методы)
-// Вспомогательная функция для отправки сообщения о сохранении кэша
+// Вспомогательная функция для корректного завершения: сначала трекеры, потом кэш; ждём обработку очереди.
 void sendSaveCacheMessage(AppCore *core)
 {
-    if (core)
-    {
-        core->getEventManager().sendMessage(AppMessage("main", "save_cache", 0));
-        core->getEventManager().sendMessage(AppMessage("main", "stop_tracker", 0)); // надо дождаться завершения
-    }
+    if (!core)
+        return;
+    EventManager &em = core->getEventManager();
+    constexpr auto kPhaseWait = std::chrono::seconds(15);
+    em.sendMessage(AppMessage("main", "stop_tracker", 0));
+    em.waitUntilQuiet(kPhaseWait);
+    em.sendMessage(AppMessage("main", "save_cache", 0));
+    em.waitUntilQuiet(kPhaseWait);
 }
 
 int main(int argc, char *argv[])
 {
 
     QApplication a(argc, argv);
+
+    QTranslator translator;
+    const QStringList uiLanguages = QLocale::system().uiLanguages();
+    for (const QString& locale : uiLanguages) {
+        const QString baseName = QLatin1String("M3_") + QLocale(locale).name();
+        const QString appDir = QCoreApplication::applicationDirPath();
+        if (translator.load(baseName, appDir + QLatin1String("/i18n"))
+            || translator.load(appDir + QLatin1Char('/') + baseName + QLatin1String(".qm"))
+            || translator.load(QLatin1String(":/i18n/") + baseName)) {
+            a.installTranslator(&translator);
+            break;
+        }
+    }
 
     // QPixmap pixmap(":/splash.png");
     // QSplashScreen splash(pixmap);
@@ -64,6 +82,7 @@ int main(int argc, char *argv[])
     core->registerModule(op->cacheKey());
 
     core->getEventManager().sendMessage(AppMessage("main", "askToPreInit", 0)); // вместо нуля можно аргументы
+
 #ifndef QML
     mainWindow.show();
 #endif
@@ -73,23 +92,7 @@ int main(int argc, char *argv[])
     // view.show();
 #endif
 
-    // TODO: Миграция с децентрализованной системы сообщений в централизованную либо генератор карты маршрутизации + тестер маршрутов
-    /////////////////////////////////////////////////
-    // splash.finish(&mainWindow); // закрыть сплеш после показа окна
-    QTranslator translator;
-    const QStringList uiLanguages = QLocale::system().uiLanguages();
-    for (const QString &locale : uiLanguages)
-    {
-        const QString baseName = "M3_" + QLocale(locale).name();
-        if (translator.load(":/i18n/" + baseName))
-        {
-            a.installTranslator(&translator);
-            break;
-        }
-    }
-
-    QObject::connect(&a, &QApplication::aboutToQuit, [&core]()
-                     { sendSaveCacheMessage(core); });
+    QObject::connect(&a, &QApplication::aboutToQuit, [&core]() { sendSaveCacheMessage(core); });
 
     return a.exec();
 }

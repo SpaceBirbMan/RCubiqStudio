@@ -4,6 +4,8 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include "viewportwidget.h"
+// #include "rcqvirtualcamera.h"
+#include "obsvirtualcamera.h"
 #include "uirenderer.h"
 #include "trackerrenderer.h"
 #include <QDebug>
@@ -16,8 +18,17 @@
 #include <QMenu>
 #include <QCursor>
 #include <QPalette>
-
-using namespace RUI;
+#include <QEvent>
+#include <QDockWidget>
+#include <any>
+#include <atomic>
+#include <algorithm>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 MainWindow::MainWindow(QWidget *parent, AppCore *core)
     : QMainWindow(parent)
@@ -25,6 +36,37 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
 {
     this->core = core;
     ui->setupUi(this);
+
+    ui->centralwidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    ui->centralwidget->setMaximumHeight(ui->centralwidget->sizeHint().height());
+
+    ui->dockWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    ui->dockWidgetViewport->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    ui->dockWidget_3->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+
+    // Horizontal dock widths must scale with *window width*. Using height() here made tall
+    // windows assign huge side dock widths and the right panel could not be narrowed.
+    int winW = width();
+    if (winW < 200)
+        winW = geometry().width() > 200 ? geometry().width() : 1000;
+
+    const int sideSize = (std::max)(140, static_cast<int>(winW * 0.18));
+    const int centerSize = (std::max)(280, winW - 2 * sideSize);
+
+    QList<QDockWidget*> docks = {ui->dockWidget, ui->dockWidgetViewport, ui->dockWidget_3};
+    resizeDocks(docks, {sideSize, centerSize, sideSize}, Qt::Horizontal);
+
+    ui->dockWidget->setMinimumWidth(120);
+    ui->dockWidgetViewport->setMinimumWidth(200);
+    ui->dockWidget_3->setMinimumWidth(120);
+
+    ui->rightPanel->setMinimumWidth(0);
+    if (ui->scrollAreaWidgetContents)
+        ui->scrollAreaWidgetContents->setMinimumWidth(0);
+    if (ui->scrollAreaWidgetContents_2)
+        ui->scrollAreaWidgetContents_2->setMinimumWidth(0);
+    if (ui->scrollAreaWidgetContents_3)
+        ui->scrollAreaWidgetContents_3->setMinimumWidth(0);
 
     _updateTimer = nullptr;
     _trackerTableCache = nullptr;
@@ -54,8 +96,8 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     core->getEventManager().subscribe(name, "gen_plugin_deactivated",  &MainWindow::uiSetPluginInactive, this);
 
     // Button connections
-    connect(ui->newFileMenuButton,    &QAction::triggered,  this, &MainWindow::onNewFileClicked);
-    connect(ui->saveFileMenuButton,   &QAction::triggered,  this, &MainWindow::onSaveFileClicked);
+    connect(ui->newSetupMenuButton,    &QAction::triggered,  this, &MainWindow::onNewFileClicked);
+    connect(ui->saveAsSetupMenuButton,   &QAction::triggered,  this, &MainWindow::onSaveFileClicked);
     connect(ui->action_Render_API,    &QAction::triggered,  this, &MainWindow::setRenderApi);
     connect(ui->addPlugin,            &QPushButton::clicked, this, &MainWindow::addPlugin);
     connect(ui->deletePlugin,         &QPushButton::clicked, this, &MainWindow::removePlugin);
@@ -71,13 +113,83 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
 
     // Replace placeholder viewport with the real ViewportWidget
     ViewportWidget* vw = new ViewportWidget(core, this);
-    ui->gridLayout_2->replaceWidget(ui->viewport, vw);
+    ui->dockWidgetViewport->setWidget(vw);
     delete ui->viewport;
     ui->viewport = vw;
+
+    // --- akvirtualcamera (commented out, replaced by OBS virtual camera) ---
+    // m_rcqVirtualCam = std::make_unique<RcqVirtualCamera>();
+    // if (m_rcqVirtualCam->loadFromApplicationDir() && m_rcqVirtualCam->startStream(RcqVirtualCamera::kDefaultDeviceId)) {
+    //     vw->setAfterFrameCallback([this, vw]() {
+    //         if (m_rcqVirtualCam && m_rcqVirtualCam->isStreaming()) {
+    //             m_rcqVirtualCam->pushFrameFromWidget(vw);
+    //         }
+    //     });
+    // } else {
+    //     m_rcqVirtualCam.reset();
+    // }
+
+    // --- OBS Virtual Camera (DirectShow, shared memory, no extra DLL needed) ---
+    m_obsVirtualCam = std::make_unique<ObsVirtualCamera>();
+    if (m_obsVirtualCam->startStream(640, 480, 30)) {
+        vw->setAfterFrameCallback([this, vw]() {
+            if (m_obsVirtualCam && m_obsVirtualCam->isStreaming()) {
+                m_obsVirtualCam->pushFrameFromWidget(vw);
+            }
+        });
+    } else {
+        m_obsVirtualCam.reset();
+    }
+
+    setupViewMenuDockToggles();
+
+    ui->gpu_label->setVisible(false);
+    auto* resTimer = new QTimer(this);
+    connect(resTimer, &QTimer::timeout, this, &MainWindow::updateResourceLabels);
+    resTimer->start(1000);
+    updateResourceLabels();
+}
+
+void MainWindow::setupViewMenuDockToggles()
+{
+    const auto bind = [this](QDockWidget* dock, QAction* act) {
+        connect(dock, &QDockWidget::visibilityChanged, this, [act](bool visible) {
+            if (act->isChecked() == visible)
+                return;
+            act->blockSignals(true);
+            act->setChecked(visible);
+            act->blockSignals(false);
+        });
+        connect(act, &QAction::toggled, dock, &QDockWidget::setVisible);
+        act->blockSignals(true);
+        act->setChecked(dock->isVisible());
+        act->blockSignals(false);
+    };
+    bind(ui->dockWidget, ui->actionViewDockEngine);
+    bind(ui->dockWidgetViewport, ui->actionViewDockViewport);
+    bind(ui->dockWidget_3, ui->actionViewDockPlugins);
+}
+
+void MainWindow::changeEvent(QEvent* event)
+{
+    if (event->type() == QEvent::LanguageChange) {
+        ui->retranslateUi(this);
+        updateResourceLabels();
+        for (auto& entry : pluginPageEntries) {
+            if (entry.second.checkBox)
+                entry.second.checkBox->setText(tr("Active"));
+        }
+        if (ui->tableTrackerWidget && ui->tableTrackerWidget->columnCount() >= 2) {
+            ui->tableTrackerWidget->setHorizontalHeaderLabels({tr("Parameter"), tr("Value")});
+        }
+    }
+    QMainWindow::changeEvent(event);
 }
 
 MainWindow::~MainWindow()
 {
+    // m_rcqVirtualCam.reset();
+    m_obsVirtualCam.reset();
     if (currentCamera) {
         currentCamera->close();
     }
@@ -92,9 +204,9 @@ void MainWindow::initialize() {
 
 void MainWindow::addPlugin() {
     QMenu menu(this);
-    QAction* actEngine    = menu.addAction("Добавить движок");
-    QAction* actTracker   = menu.addAction("Добавить трекер");
-    QAction* actGenPlugin = menu.addAction("Добавить плагин");
+    QAction* actEngine    = menu.addAction(tr("Add engine"));
+    QAction* actTracker   = menu.addAction(tr("Add tracker"));
+    QAction* actGenPlugin = menu.addAction(tr("Add plugin"));
 
     QAction* chosen = menu.exec(QCursor::pos());
 
@@ -106,9 +218,9 @@ void MainWindow::addPlugin() {
 void MainWindow::addEnginePlugin() {
     QStringList fileNames = QFileDialog::getOpenFileNames(
         ui->centralwidget,
-        "Выберите файл движка",
+        tr("Choose engine library"),
         QDir::homePath(),
-        "Динамические библиотеки (*.dll);;Все файлы (*)"
+        tr("Dynamic libraries (*.dll);;All files (*)")
     );
     std::vector<std::string> paths;
     for (const QString& f : fileNames)
@@ -120,9 +232,9 @@ void MainWindow::addEnginePlugin() {
 void MainWindow::addTrackerPlugin() {
     QStringList fileNames = QFileDialog::getOpenFileNames(
         ui->centralwidget,
-        "Выберите файл трекера",
+        tr("Choose tracker library"),
         QDir::homePath(),
-        "Динамические библиотеки (*.dll);;Все файлы (*)"
+        tr("Dynamic libraries (*.dll);;All files (*)")
     );
     std::vector<std::string> paths;
     for (const QString& f : fileNames)
@@ -134,9 +246,9 @@ void MainWindow::addTrackerPlugin() {
 void MainWindow::addGenPlugin() {
     QStringList fileNames = QFileDialog::getOpenFileNames(
         ui->centralwidget,
-        "Выберите файл плагина",
+        tr("Choose plugin package"),
         QDir::homePath(),
-        "Файлы плагинов (*.ofp);;Все файлы (*)"
+        tr("Plugin packages (*.ofp);;All files (*)")
     );
     std::vector<std::string> paths;
     for (const QString& f : fileNames)
@@ -232,7 +344,7 @@ void MainWindow::uiAddPluginEntry(PluginUIInfo info) {
     layout->addWidget(pathLabel);
 
     // Checkbox for enable/disable
-    QCheckBox* checkBox = new QCheckBox("Активен");
+    QCheckBox* checkBox = new QCheckBox(tr("Active"));
     layout->addWidget(checkBox);
     layout->addStretch();
 
@@ -442,7 +554,7 @@ void MainWindow::initTrackerTable(std::unordered_map<std::string, std::shared_pt
     tbl->clear();
     tbl->setRowCount(static_cast<int>(table->size()));
     tbl->setColumnCount(2);
-    tbl->setHorizontalHeaderLabels({"Parameter", "Value"});
+    tbl->setHorizontalHeaderLabels({tr("Parameter"), tr("Value")});
 
     tbl->horizontalHeader()->setStretchLastSection(true);
     tbl->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
@@ -562,11 +674,69 @@ void MainWindow::onSaveFileClicked() {
 void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> table) {}
 
 void MainWindow::initDynamicUi(std::shared_ptr<std::vector<RUI::UiPage>> pages) {
+    if (!pages) return;
     QMetaObject::invokeMethod(this, [this, pages]() {
-        for (UiPage root : *pages) {
-            UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(root), ui->leftPanel);
+        while (ui->leftPanel->count() > 0) {
+            QWidget* w = ui->leftPanel->widget(0);
+            ui->leftPanel->removeTab(0);
+            delete w;
+        }
+        for (size_t i = 0; i < pages->size(); ++i) {
+            auto root = std::make_shared<RUI::UiPage>((*pages)[i]);
+            UiRenderer::renderToTabWidget(root, ui->leftPanel);
         }
     }, Qt::QueuedConnection);
+}
+
+void MainWindow::updateResourceLabels()
+{
+#ifdef _WIN32
+    struct CpuSnap {
+        FILETIME idle{}, kernel{}, user{};
+        bool     valid = false;
+    };
+    static CpuSnap s_cpu;
+    FILETIME idle{}, kernel{}, user{};
+    if (GetSystemTimes(&idle, &kernel, &user)) {
+        if (s_cpu.valid) {
+            auto toU64 = [](const FILETIME& ft) -> uint64_t {
+                return (uint64_t(ft.dwHighDateTime) << 32) | uint64_t(ft.dwLowDateTime);
+            };
+            const uint64_t idleD = toU64(idle) - toU64(s_cpu.idle);
+            const uint64_t kd   = toU64(kernel) - toU64(s_cpu.kernel);
+            const uint64_t ud   = toU64(user) - toU64(s_cpu.user);
+            const uint64_t sys  = kd + ud;
+            const float pct = sys > 0 ? (100.f * float(sys - idleD) / float(sys)) : 0.f;
+            ui->cpu_label->setText(tr("CPU: %1%").arg(QString::number(int(pct + 0.5f))));
+        }
+        s_cpu.idle = idle;
+        s_cpu.kernel = kernel;
+        s_cpu.user = user;
+        s_cpu.valid = true;
+    }
+    MEMORYSTATUSEX ms{};
+    ms.dwLength = sizeof(ms);
+    if (GlobalMemoryStatusEx(&ms)) {
+        ui->ram_label->setText(tr("RAM: %1%").arg(int(ms.dwMemoryLoad)));
+    }
+#else
+    ui->cpu_label->setText(tr("CPU: —"));
+    ui->ram_label->setText(tr("RAM: —"));
+#endif
+
+    try {
+        std::any& a = core->getEventManager().getBusPtr()->getData("engine_gpu_load");
+        auto* p = std::any_cast<std::atomic<float>*>(a);
+        if (p) {
+            const float v = p->load(std::memory_order_relaxed);
+            ui->gpu_label->setText(tr("GPU: %1%").arg(QString::number(int(v + 0.5f))));
+            ui->gpu_label->setVisible(true);
+        } else {
+            ui->gpu_label->setVisible(false);
+        }
+    } catch (...) {
+        ui->gpu_label->setVisible(false);
+    }
 }
 
 void MainWindow::initTrackerDynamicUi(std::unordered_map<std::string, RUI::UiPage>* pages) {
@@ -587,9 +757,9 @@ void MainWindow::showCacheErrorMessage() {
 void MainWindow::setRenderApi() {
     QString fileName = QFileDialog::getOpenFileName(
         ui->centralwidget,
-        "Выберите файл API",
+        tr("Choose render API library"),
         QDir::homePath(),
-        "Динамические библиотеки (*.dll);;Все файлы (*)"
+        tr("Dynamic libraries (*.dll);;All files (*)")
     );
     if (!fileName.isEmpty())
         core->getEventManager().sendMessage(AppMessage("UI", "set_render_api", fileName.toStdString()));

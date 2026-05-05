@@ -5,14 +5,17 @@
 #define WIN32_LEAN_AND_MEAN
 
 #include <QWidget>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <vector>
 #include <string>
 #include <utility>
+#include <deque>
 
 #include <bgfx/bgfx.h>
 #include <bx/bx.h>
@@ -22,7 +25,6 @@
 
 class ControlLayer;
 class EngineManager;
-class VirtualCamera;
 
 class ViewportWidget : public QWidget {
     Q_OBJECT
@@ -32,6 +34,9 @@ public:
     ~ViewportWidget() override;
 
     void startStreaming(std::shared_ptr<void> ctx);
+
+    /** Called on the same timer tick after all render_pipeline callbacks; optional. */
+    void setAfterFrameCallback(std::function<void()> cb);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -56,6 +61,7 @@ private:
     QTimer timer;
     ControlLayer* clptr = nullptr;
     std::function<void()> m_tickCallback;
+    std::function<void()> m_afterFrame;
     std::vector<std::function<void()>>* ren_pip_ptr;
     std::deque<ViewportCommand> commandQueue {};
 
@@ -81,8 +87,6 @@ private:
     void scheduleEngineDelete(std::pair<IModel*, std::string> info);
 
     int viewport_size[2] {0, 0};
-    VirtualCamera* m_vcam = nullptr;
-
 };
 
 #endif // VIEWPORTWIDGET_H

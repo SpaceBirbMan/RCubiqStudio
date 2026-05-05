@@ -3,6 +3,8 @@
 
 #include <any>
 #include <functional>
+
+/// Отправщик сообщений конкретному получаетлю, подлежит пересмотру
 class DirectSender
 {
 

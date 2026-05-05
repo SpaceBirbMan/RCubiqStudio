@@ -13,7 +13,11 @@ class TrackerManager : public ICacheable
 {
 private:
 
-    std::unordered_map<std::string, ITracker*> trackers;  // path -> instance
+    struct TrackerData {
+        ITracker* instance;
+        DestroyTracker destroy;
+    };
+    std::unordered_map<std::string, TrackerData> trackers;  // path -> data
     std::string pendingResolutionPath;                      // path currently being resolved
 
     nlohmann::json serializeCache() const;
@@ -25,6 +29,9 @@ private:
     std::string name = "TrackerManager";
 
     AppCore* core = nullptr;
+
+    /// Graceful shutdown for all tracker plugins (quit path).
+    void onStopTracker();
 
 public:
 

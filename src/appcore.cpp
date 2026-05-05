@@ -1,6 +1,7 @@
 #include "appcore.h"
 #include "eventmanager.h"
 
+/// Самый основной модуль
 AppCore::AppCore() : eventManager() {
     eQueuePointer = &(this->eventManager.getQueue());
 
@@ -26,6 +27,7 @@ void AppCore::startInitialization() {
 void AppCore::discardStartUp() {
 }
 
+/// Функция для учёта модулей, готовых к получению кеша
 void AppCore::addToReady(std::string name) {
     if (!pre_init_flag) {
     this->readyModules.emplace_back(name);
@@ -36,6 +38,7 @@ void AppCore::addToReady(std::string name) {
     }
 }
 
+/// Функция для учёта модулей, готовых к инициализации
 void AppCore::addToInitReady(std::string name) {
     if (!complition_flag) {
     this->initReadyModules.emplace_back(name);

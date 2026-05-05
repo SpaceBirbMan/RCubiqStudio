@@ -1,5 +1,6 @@
 #include "otherplugins.h"
 #include "appcore.h"
+#include "consts.h"
 
 OtherPlugins::OtherPlugins(AppCore *appcore) {
     this->core = appcore;
@@ -68,7 +69,7 @@ void OtherPlugins::addPaths(std::vector<std::string> paths) {
         auto it = plugins.find(path);
         if (it != plugins.end()) {
             PluginUIInfo info;
-            info.name = it->second->getName();
+            info.name = it->second.instance->getName();
             info.path = path;
             info.type = PluginUIType::Generic;
             core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_ready", info));
@@ -102,8 +103,8 @@ void OtherPlugins::postSetDataBus() {
         std::cerr << "[OtherPlugins] plugins empty, but post setting was requested. check resolving pipeline\n";
         return;
     }
-    for (auto& [path, plugin] : plugins) {
-        if (plugin) plugin->setDataBus(this->data_bus);
+    for (auto& [path, data] : plugins) {
+        if (data.instance) data.instance->setDataBus(this->data_bus);
     }
     this->need_to_set_db = false;
 }
@@ -115,12 +116,11 @@ void OtherPlugins::registerPlugin(std::vector<void*> pointers) {
         return;
     }
 
-    for (size_t i = 0; i < pointers.size(); ++i) {
-        if (pointers[i] == nullptr) {
-            std::cerr << "[OtherPlugins] Pointer at index " << i << " is null\n";
-            if (!pendingPaths.empty()) pendingPaths.pop();
-            return;
-        }
+    // Only 'create' (index 0) is mandatory; 'destroy' (index 1+) may be nullptr
+    if (pointers[0] == nullptr) {
+        std::cerr << "[OtherPlugins] Mandatory 'create' pointer is null\n";
+        if (!pendingPaths.empty()) pendingPaths.pop();
+        return;
     }
 
     if (pendingPaths.empty()) {
@@ -132,6 +132,8 @@ void OtherPlugins::registerPlugin(std::vector<void*> pointers) {
     pendingPaths.pop();
 
     auto cp = reinterpret_cast<CreatePlugin>(pointers[0]);
+    auto dp = (pointers.size() > 1) ? reinterpret_cast<DestroyPlugin>(pointers[1]) : nullptr;
+
     if (!cp) {
         std::cerr << "[OtherPlugins] Invalid CreatePlugin pointer\n";
         return;
@@ -150,9 +152,10 @@ void OtherPlugins::registerPlugin(std::vector<void*> pointers) {
             this->need_to_set_db = true;
         }
 
-        this->plugins.emplace(path, plugin);
+        this->plugins.emplace(path, PluginData{plugin, dp});
         activePluginPaths.insert(path);
         core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_activated", path));
+        core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
 
         PluginUIInfo info;
         info.name = plugin->getName();
@@ -174,11 +177,17 @@ void OtherPlugins::deletePlugin(std::string path) {
         return;
     }
 
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+
     auto it = plugins.find(path);
     if (it != plugins.end()) {
         // Destroy instance first (calls DLL code before library is unloaded)
-        it->second->shutdown();
-        delete it->second;
+        it->second.instance->shutdown();
+        if (it->second.destroy) {
+            it->second.destroy(it->second.instance);
+        } else {
+            delete it->second.instance;
+        }
         plugins.erase(it);
         std::cout << "[OtherPlugins] Plugin instance destroyed: " << path << std::endl;
     }
@@ -203,8 +212,12 @@ void OtherPlugins::disablePlugin(std::string path) {
         return;
     }
     // Shutdown and destroy instance, but keep in registry
-    it->second->shutdown();
-    delete it->second;
+    it->second.instance->shutdown();
+    if (it->second.destroy) {
+        it->second.destroy(it->second.instance);
+    } else {
+        delete it->second.instance;
+    }
     plugins.erase(it);
     activePluginPaths.erase(path);
     // Unload the DLL (will be reloaded on enablePlugin)

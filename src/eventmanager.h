@@ -7,6 +7,7 @@
 #include <vector>
 #include <functional>
 #include <any>
+#include <chrono>
 #include "ieventmanager.h"
 #include "misc.h"
 
@@ -48,11 +49,14 @@ public:
 
     void sendMessage(AppMessage message) override;
 
+    /// Block until the message queue is empty and no callback is running (or timeout). For shutdown ordering.
+    void waitUntilQuiet(std::chrono::milliseconds timeout);
+
 private:
 
     //std::unordered_map<std::string, std::function<void(const std::any&)>> subscribers = std::unordered_map<std::string, std::function<void(const std::any&)>>();
 
-    std::vector<subStruct> subscribers {};
+    std::vector<subStruct> subscribers {}; // подписчики на сообщения
 
     EventQueue messages = EventQueue{}; // хранит сообщения
 
@@ -63,7 +67,7 @@ private:
     void notifyModules();
 
     // тестирует всю систему на предмет ошибок, тесты поверхностные, глубже в модуле, выдающем ошибку
-    void test();
+    void test(); // а точнее должен был по идее
 
 };
 

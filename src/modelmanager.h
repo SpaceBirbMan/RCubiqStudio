@@ -4,7 +4,7 @@
 #include "fileloader.h"
 #include "filesaver.h"
 
-class ModelManager
+class ModelManager // пересмотр
 {
 public:
     ModelManager();

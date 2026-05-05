@@ -1,4 +1,5 @@
 #include "enginemanager.h"
+#include "consts.h"
 
 EngineManager::EngineManager(AppCore* acptr) {
     this->acptr = acptr;
@@ -77,7 +78,7 @@ void EngineManager::activateEngineByPath(std::string path) {
     auto it = engines.find(path);
     if (it != engines.end()) {
         activeEnginePath = path;
-        tickWrapper = [this, path]() { engines.at(path)->tick(); };
+        tickWrapper = [this, path]() { engines.at(path).instance->tick(); };
         acptr->getEventManager().sendMessage(AppMessage(name, "engine_ready", tickWrapper));
         std::cout << "[EngineManager] Switched to already-loaded engine: " << path << std::endl;
         return;
@@ -87,7 +88,7 @@ void EngineManager::activateEngineByPath(std::string path) {
     pendingResolutionPath = path;
     LibMeta meta;
     meta.path = path;
-    meta.func_names = {"create_engine"};
+    meta.func_names = {"create_engine", "destroy_engine"};
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_resolving_request", meta));
     std::cout << "[EngineManager] Resolving engine: " << path << std::endl;
 }
@@ -98,20 +99,29 @@ void EngineManager::removeEngine(std::string path) {
         return;
     }
 
+    acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+
     // Destroy instance first (calls DLL code before library is unloaded)
     auto it = engines.find(path);
     if (it != engines.end()) {
-        IModel* eng = it->second;
+        EngineData data = it->second;
         engines.erase(it);  // remove from map before shutdown to prevent re-entry
 
         // shutdown() nulls the pipeline slot and waits for any in-progress tick.
         // It is safe to call from this (MessageProcessor) thread.
-        eng->shutdown();
+        data.instance->shutdown();
 
         // Actual delete (→ bgfx::shutdown) must run on the main thread.
         // ViewportWidget processes this in its timer callback and then sends unload_library.
+        struct EngineDeleteInfo {
+            IModel* engine;
+            DestroyEngine destroy;
+            std::string path;
+        };
+        EngineDeleteInfo info = {data.instance, data.destroy, path};
+
         acptr->getEventManager().sendMessage(
-            AppMessage(name, "schedule_engine_delete", std::make_pair(eng, path)));
+            AppMessage(name, "schedule_engine_delete", info));
         std::cout << "[EngineManager] Engine shutdown done; delete scheduled on main thread: " << path << std::endl;
     }
 
@@ -152,6 +162,8 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
     }
 
     auto ce = reinterpret_cast<CreateEngine>(pointers[0]);
+    auto de = (pointers.size() > 1) ? reinterpret_cast<DestroyEngine>(pointers[1]) : nullptr;
+
     if (!ce) {
         std::cerr << "[EngineManager] Invalid CreateEngine pointer\n";
         pendingResolutionPath.clear();
@@ -168,7 +180,7 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
     std::string resolvedPath = pendingResolutionPath;
     pendingResolutionPath.clear();
 
-    engines[resolvedPath] = eng;
+    engines[resolvedPath] = EngineData{eng, de};
     activeEnginePath = resolvedPath;
 
     eng->test();
@@ -190,35 +202,36 @@ void EngineManager::sendViewport(ViewportWidget* vp) {
 
 void EngineManager::resize(ViewportBus b) {
     auto it = engines.find(activeEnginePath);
-    if (it != engines.end() && it->second) {
-        it->second->update(b);
+    if (it != engines.end() && it->second.instance) {
+        it->second.instance->update(b);
     }
 }
 
 void EngineManager::sendTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table) {
     auto it = engines.find(activeEnginePath);
-    if (it != engines.end() && it->second) {
+    if (it != engines.end() && it->second.instance) {
         EngineMeta em;
         em.table = table;
         em.windowHandle = 0;
-        it->second->setMeta(em);
+        it->second.instance->setMeta(em);
+        acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
     }
 }
 
 void EngineManager::sendDataBus(IDataBus* dbp) {
     auto it = engines.find(activeEnginePath);
-    if (it != engines.end() && it->second) {
-        it->second->setDataBus(dbp);
+    if (it != engines.end() && it->second.instance) {
+        it->second.instance->setDataBus(dbp);
     }
 }
 
 void EngineManager::sendWinId(uintptr_t id) {
     auto it = engines.find(activeEnginePath);
-    if (it == engines.end() || !it->second) {
+    if (it == engines.end() || !it->second.instance) {
         std::cerr << "[EngineManager] sendWinId: no active engine\n";
         return;
     }
-    IModel* eng = it->second;
+    IModel* eng = it->second.instance;
 
     EngineMeta b = EngineMeta();
     b.windowHandle = id;
@@ -227,7 +240,7 @@ void EngineManager::sendWinId(uintptr_t id) {
 
     tickWrapper = [this]() {
         auto i = engines.find(activeEnginePath);
-        if (i != engines.end() && i->second) i->second->tick();
+        if (i != engines.end() && i->second.instance) i->second.instance->tick();
     };
 
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_ready", tickWrapper));
@@ -240,12 +253,12 @@ void EngineManager::sendWinId(uintptr_t id) {
 void EngineManager::sendRenderer(IRenderer* ptr) {
     std::cout << "[EngineManager] RENDERER_SENT\n";
     auto it = engines.find(activeEnginePath);
-    if (it != engines.end() && it->second) {
+    if (it != engines.end() && it->second.instance) {
         EngineMeta em;
         em.renderer = ptr;
         em.table = nullptr;
         em.windowHandle = 0;
-        it->second->setMeta(em);
+        it->second.instance->setMeta(em);
     }
 }
 

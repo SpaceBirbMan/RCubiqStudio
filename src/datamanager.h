@@ -42,9 +42,13 @@ private:
     void resolveFuncTable(LibMeta meta);
 
     void saveFiles(std::any data);
+
+    // Функции для разрешения адресов функций из dll у плагинов
+    // Подлежит пересмотру, возможно нужно слияние функций
     void resolveApi(LibMeta meta);
     void resolveTracker(Meta meta);
     void resolvePlugin(Meta meta);
+
     void unloadLibrary(std::string path);
 
 };

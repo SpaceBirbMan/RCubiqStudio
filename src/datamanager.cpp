@@ -48,19 +48,44 @@ void DataManager::resolveTracker(Meta meta) {
     // TODO: а если два движка откроется?
     auto it = libsPool.find(meta.path);
     if (it == libsPool.end()) {
-        auto lib = std::make_shared<DynamicLibrary>(meta.path);
-        auto result = libsPool.emplace(meta.path, lib);
-        it = result.first;
+        try {
+            auto lib = std::make_shared<DynamicLibrary>(meta.path);
+            auto result = libsPool.emplace(meta.path, lib);
+            it = result.first;
+        } catch (const std::exception& e) {
+            std::cerr << "[DataManager] resolveTracker: failed to load library '"
+                      << meta.path << "': " << e.what() << std::endl;
+            appCorePtr->getEventManager().sendMessage(
+                AppMessage(name, "tracker_resolving_respond", std::vector<void*>{})
+            );
+            return;
+        }
     }
 
     std::vector<void*> ptrs;
-    for (int i = 0; i < meta.func_names.size(); i++) {
-        ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+    for (int i = 0; i < (int)meta.func_names.size(); i++) {
+        try {
+            ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+        } catch (const std::exception& e) {
+            if (i == 0) {
+                // 'create' is mandatory — abort
+                std::cerr << "[DataManager] resolveTracker: mandatory symbol '"
+                          << meta.func_names[i] << "' not found: " << e.what() << std::endl;
+                appCorePtr->getEventManager().sendMessage(
+                    AppMessage(name, "tracker_resolving_respond", std::vector<void*>{})
+                );
+                return;
+            }
+            // Optional symbols (e.g. 'destroy') — use nullptr, TrackerManager handles it
+            std::cerr << "[DataManager] resolveTracker: optional symbol '"
+                      << meta.func_names[i] << "' not found, using nullptr\n";
+            ptrs.emplace_back(nullptr);
+        }
     }
 
     appCorePtr->getEventManager().sendMessage(
         AppMessage(name, "tracker_resolving_respond", ptrs)
-        );
+    );
 }
 
 void DataManager::resolveFuncTable(LibMeta meta) {
@@ -69,19 +94,42 @@ void DataManager::resolveFuncTable(LibMeta meta) {
     // TODO: а если два движка откроется?
     auto it = libsPool.find(meta.path);
     if (it == libsPool.end()) {
-        auto lib = std::make_shared<DynamicLibrary>(meta.path);
-        auto result = libsPool.emplace(meta.path, lib);
-        it = result.first;
+        try {
+            auto lib = std::make_shared<DynamicLibrary>(meta.path);
+            auto result = libsPool.emplace(meta.path, lib);
+            it = result.first;
+        } catch (const std::exception& e) {
+            std::cerr << "[DataManager] resolveFuncTable: failed to load library '"
+                      << meta.path << "': " << e.what() << std::endl;
+            appCorePtr->getEventManager().sendMessage(
+                AppMessage(name, "engine_resolving_respond", std::vector<void*>{})
+            );
+            return;
+        }
     }
 
     std::vector<void*> ptrs;
-    for (int i = 0; i < meta.func_names.size(); i++) {
-        ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+    for (int i = 0; i < (int)meta.func_names.size(); i++) {
+        try {
+            ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+        } catch (const std::exception& e) {
+            if (i == 0) {
+                std::cerr << "[DataManager] resolveFuncTable: mandatory symbol '"
+                          << meta.func_names[i] << "' not found: " << e.what() << std::endl;
+                appCorePtr->getEventManager().sendMessage(
+                    AppMessage(name, "engine_resolving_respond", std::vector<void*>{})
+                );
+                return;
+            }
+            std::cerr << "[DataManager] resolveFuncTable: optional symbol '"
+                      << meta.func_names[i] << "' not found, using nullptr\n";
+            ptrs.emplace_back(nullptr);
+        }
     }
 
     appCorePtr->getEventManager().sendMessage(
         AppMessage(name, "engine_resolving_respond", ptrs)
-        );
+    );
 }
 
 // TODO: Функции друг на друга слишком похожи, имеет смысл унифицировать для отправки в этот менеджер, а ответное сообщение помещать в LibMeta
@@ -124,19 +172,42 @@ void DataManager::resolvePlugin(Meta meta) {
     // TODO: а если два движка откроется?
     auto it = libsPool.find(meta.path);
     if (it == libsPool.end()) {
-        auto lib = std::make_shared<DynamicLibrary>(meta.path);
-        auto result = libsPool.emplace(meta.path, lib);
-        it = result.first;
+        try {
+            auto lib = std::make_shared<DynamicLibrary>(meta.path);
+            auto result = libsPool.emplace(meta.path, lib);
+            it = result.first;
+        } catch (const std::exception& e) {
+            std::cerr << "[DataManager] resolvePlugin: failed to load library '"
+                      << meta.path << "': " << e.what() << std::endl;
+            appCorePtr->getEventManager().sendMessage(
+                AppMessage(name, "plugin_resolving_respond", std::vector<void*>{})
+            );
+            return;
+        }
     }
 
     std::vector<void*> ptrs;
-    for (int i = 0; i < meta.func_names.size(); i++) {
-        ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+    for (int i = 0; i < (int)meta.func_names.size(); i++) {
+        try {
+            ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
+        } catch (const std::exception& e) {
+            if (i == 0) {
+                std::cerr << "[DataManager] resolvePlugin: mandatory symbol '"
+                          << meta.func_names[i] << "' not found: " << e.what() << std::endl;
+                appCorePtr->getEventManager().sendMessage(
+                    AppMessage(name, "plugin_resolving_respond", std::vector<void*>{})
+                );
+                return;
+            }
+            std::cerr << "[DataManager] resolvePlugin: optional symbol '"
+                      << meta.func_names[i] << "' not found, using nullptr\n";
+            ptrs.emplace_back(nullptr);
+        }
     }
 
     appCorePtr->getEventManager().sendMessage(
         AppMessage(name, "plugin_resolving_respond", ptrs)
-        );
+    );
 }
 
 void DataManager::unloadLibrary(std::string path) {

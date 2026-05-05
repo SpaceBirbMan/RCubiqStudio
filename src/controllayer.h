@@ -6,6 +6,7 @@
 
 class ViewportWidget;
 
+/// Слой считывания управления с окна отображения
 class ControlLayer
 {
 private:

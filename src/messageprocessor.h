@@ -33,11 +33,15 @@ public:
         cv.notify_one();
     }
 
+    /// True while dispatching callbacks for one message (worker thread).
+    bool isDispatching() const { return dispatching.load(std::memory_order_acquire); }
+
 private:
     std::thread proc_thread;
     std::mutex mut;
     std::condition_variable cv;
     std::atomic<bool> stopFlag;
+    std::atomic<bool> dispatching{false};
     EventQueue& qPtr;
     //std::unordered_map<std::string, std::function<void(const std::any&)>>& subsTable;
     std::vector<subStruct>& subsVector;

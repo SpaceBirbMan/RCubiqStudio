@@ -1,14 +1,17 @@
 #include "viewportwidget.h"
 #include "controllayer.h"
+#include <functional>
 #include <QDebug>
 #include <QThread>
 #include <QMouseEvent>
 #include <QWheelEvent>
-#include <QImage>
-#include "virtualcamera.h"
 #include <QShowEvent>
+#include <iostream>
 
-// FIXME: Глючный ресайз на старте, возможно нужен форс-ресайз
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 class EngineManager;
 
 ViewportWidget::ViewportWidget(AppCore* core, QWidget* parent)
@@ -18,7 +21,7 @@ ViewportWidget::ViewportWidget(AppCore* core, QWidget* parent)
     setAttribute(Qt::WA_NativeWindow, true);
     setAttribute(Qt::WA_PaintOnScreen, true);
     setFocusPolicy(Qt::StrongFocus);
-    setStyleSheet("background-color: black;");
+    setStyleSheet("background-color: #1a1a1a;");
     setAttribute(Qt::WA_OpaquePaintEvent, true);
 
     this->clptr = new ControlLayer(this);
@@ -58,13 +61,8 @@ void ViewportWidget::updateViewportSize(int w, int h) {
         core->getEventManager().getDirectSender().send(this->eng_receiver, stc);
     }
 
-    // Update VirtualCamera on resize
-    if (!m_vcam) {
-        m_vcam = new VirtualCamera();
-    } else {
-        m_vcam->shutdown();
-    }
-    m_vcam->init("M3_VirtualCam", w, h);
+    if (w < 2 || h < 2)
+        return;
 }
 
 void ViewportWidget::initialize() {
@@ -86,26 +84,26 @@ void ViewportWidget::connectToTimer(std::function<void()> fn) {
     }
 
     m_tickCallback = [this]() {
-        // ── 1. Delete any engines that were removed from the MessageProcessor thread ──
-        // bgfx::shutdown (inside ~ModelEngine) MUST run on this (main) thread.
         {
             std::lock_guard<std::mutex> lock(_pendingDeleteMutex);
             for (auto& entry : _pendingEngineDeletes) {
-                delete entry.engine;   // calls ~ModelEngine() → bgfx::shutdown safely
-                // Now DLL code is no longer needed; tell DataManager to free the library.
+                delete entry.engine;
                 core->getEventManager().sendMessage(
                     AppMessage("ViewportWidget", "unload_library", entry.path));
             }
             _pendingEngineDeletes.clear();
         }
 
-        // ── 2. Run render pipeline ──
         if (this->ren_pip_ptr) {
             for (auto& func : *this->ren_pip_ptr) {
                 if (func) {
                     func();
                 }
             }
+        }
+
+        if (m_afterFrame) {
+            m_afterFrame();
         }
     };
 
@@ -119,10 +117,6 @@ void ViewportWidget::connectToTimer(std::function<void()> fn) {
 
 ViewportWidget::~ViewportWidget() {
     delete clptr;
-    if (m_vcam) {
-        m_vcam->shutdown();
-        delete m_vcam;
-    }
 }
 
 void ViewportWidget::showEvent(QShowEvent* event) {
@@ -223,6 +217,11 @@ void ViewportWidget::paintEvent(QPaintEvent*) {
 }
 
 void ViewportWidget::paintFrame() {
+}
+
+void ViewportWidget::setAfterFrameCallback(std::function<void()> cb)
+{
+    m_afterFrame = std::move(cb);
 }
 
 void ViewportWidget::scheduleEngineDelete(std::pair<IModel*, std::string> info) {

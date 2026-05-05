@@ -6,6 +6,8 @@ class NetworkManager
 {
 public:
     NetworkManager();
+
+    // агде?
 };
 
 #endif // NETWORKMANAGER_H

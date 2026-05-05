@@ -25,9 +25,9 @@ private:
 
     std::string name = "Core";
 
-    std::vector<std::string> modules {};
-    std::vector<string> readyModules {};
-    std::vector<string> initReadyModules {};
+    std::vector<std::string> modules {}; // модули, участвующие в учётах
+    std::vector<string> readyModules {}; // готовые к получению кеша модули
+    std::vector<string> initReadyModules {}; // готовые к инициализации модули
 
     bool complition_flag = false;
     bool pre_init_flag = false;
@@ -41,12 +41,17 @@ private:
     }
 
     void startInitialization();
-    void discardStartUp();
-    void sendDataBusE();
-    void sendDataBusP();
+    void discardStartUp(); // не найдено применение
+
+    // функции отправки указателей на шину, подлежат пересмотру
+    void sendDataBusE(); // в движки
+    void sendDataBusP(); // в общие плагины
+
+    // функции учёта
     void addToReady(std::string name);
     void addToInitReady(std::string name);
 
+    // старт инициализации всего идёт с этой функции
     void askToPreInit() {
         eventManager.sendMessage(AppMessage(name, "pre_initialize", 0));
     }

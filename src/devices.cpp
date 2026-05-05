@@ -238,7 +238,7 @@ HidDevice::HidDevice(unsigned short vid, unsigned short pid)
                 id_ = "hid:" + std::to_string(vid) + ":" + std::to_string(pid) + ":path:" + path;
             }
         } catch (...) {
-            // Fallback если конвертация失败
+
         }
         hid_free_enumeration(devices);
     }

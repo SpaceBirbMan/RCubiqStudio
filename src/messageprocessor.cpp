@@ -16,18 +16,29 @@ void MessageProcessor::process() {
             auto msg = qPtr.pollMessage();
             std::cout << "[SENDER] " + msg.getSender() + " [MESSAGE] " + msg.getMessage() << std::endl;
             lock.unlock();
+            {
+                struct DispatchGuard {
+                    std::atomic<bool>& ref;
+                    explicit DispatchGuard(std::atomic<bool>& r) : ref(r) {
+                        ref.store(true, std::memory_order_release);
+                    }
+                    ~DispatchGuard() {
+                        ref.store(false, std::memory_order_release);
+                    }
+                } guard{dispatching};
 
-            for (const subStruct sstr : subsVector) {
-                if (msg.getMessage() == sstr.name) {
-                    try {
-                        // TODO: Походу придётся всё приводить к типу bool callback(std::any) и сваливать приведение на коллбеки
-                        sstr.callback(msg.getData());
+                for (const subStruct sstr : subsVector) {
+                    if (msg.getMessage() == sstr.name) {
+                        try {
+                            // TODO: Походу придётся всё приводить к типу bool callback(std::any) и сваливать приведение на коллбеки
+                            sstr.callback(msg.getData());
+                        }
+                        catch (const std::exception& e) {
+                            std::cerr << "Exception in callback '"
+                                      << sstr.name << "' " << e.what() << std::endl;
+                        }
+                        std::cout << "[RECEIVER] " << sstr.receiver << std::endl;
                     }
-                    catch (const std::exception& e) {
-                        std::cerr << "Exception in callback '"
-                                  << sstr.name << "' " << e.what() << std::endl;
-                    }
-                    std::cout << "[RECEIVER] " << sstr.receiver << std::endl;
                 }
             }
 

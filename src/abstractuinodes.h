@@ -94,8 +94,8 @@ enum TextFormat {
 
 enum TextType {
     STRING,
-    INT,
-    FLOAT,
+    INTEGER, // not "INT" — clashes with Windows minwindef.h
+    REAL,    // not "FLOAT" — clashes with Windows minwindef.h
     HIDDENTEXT
 };
 
@@ -384,6 +384,9 @@ private:
 
 public:
 
+    bool editable = false;
+    std::function<void(const std::string&)> onTextEdited;
+
     UiTitle(std::string text) {
         this->text = text;
     }
@@ -581,10 +584,15 @@ class UiToggleableButton : public UiButton {
 public:
     bool active = false;
     std::function<void(bool)> onToggle;
+
+    using UiButton::UiButton;
 };
 
 class UiCheckBox : public UiToggleableButton {
 public:
+    explicit UiCheckBox(std::string text) : UiToggleableButton(std::move(text)) {}
+    UiCheckBox(std::string text, std::function<void(bool)> onT)
+        : UiToggleableButton(std::move(text)) { onToggle = std::move(onT); }
 };
 
 //////////////////////////////////////////////////////////
@@ -717,6 +725,16 @@ public:
     std::function<void(const std::string&)> onFileSelected;
 };
 
+// Clear / tint color as 0xRRGGBBAA (matches bgfx::setViewClear RGBA8 packing used in TesterV1)
+class UiColorPicker : public UiElement {
+public:
+    std::string buttonText = "Choose color...";
+    uint32_t   color = 0x000000FF;
+    std::function<void(uint32_t)> onColorChanged;
+
+    UiColorPicker() { resetName(); }
+};
+
 class UiMenuButton : public UiButton {
 public:
     UiMenuButton(std::string text, std::function<void()> onClick = nullptr) : UiButton(text, onClick) { resetName(); }
@@ -728,6 +746,24 @@ public:
 
     UiContextMenu(std::shared_ptr<UiElement> targetElem = nullptr) : target(targetElem) { resetName(); }
     void setTarget(std::shared_ptr<UiElement> targetElem) { target = targetElem; }
+};
+
+class UiToolBox : public UiElement {
+public:
+    struct Page {
+        std::string title;
+        std::shared_ptr<UiContainer> content;
+    };
+
+    std::vector<Page> pages;
+
+    UiToolBox() { resetName(); }
+
+    void addPage(std::string title, std::shared_ptr<UiContainer> content) {
+        pages.push_back({std::move(title), std::move(content)});
+    }
+
+    void clearPages() { pages.clear(); }
 };
 
 // todo: Мб стоит подумать о вариантах передаваемых функций, как это сделано в

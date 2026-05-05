@@ -8,11 +8,11 @@
 #include <unordered_map>
 #include "misc.h"
 
+/// Шина данных, предоставляет общую точку считывания данных, синглтон
+/// FIXME: Непотокобезопасна
 class DataBus : public IDataBus
 {
 private:
-
-    // нужна потокобезопасность
 
     std::unordered_map<std::string, std::any> storage_;
 
@@ -21,7 +21,7 @@ public:
     DataBus();
 
     void registerData(const std::string& key, std::any data) override {
-        std::cout << "ADDED " << key << std::endl; // в модулях не отрабатывается добавление
+        std::cout << "ADDED " << key << std::endl;
         storage_[key] = std::move(data);
     }
 

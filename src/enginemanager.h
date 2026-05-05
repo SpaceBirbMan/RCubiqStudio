@@ -13,6 +13,7 @@
 using json = nlohmann::json;
 class ViewportWidget;
 
+/// Класс плагинов-движков
 class EngineManager : public ICacheable
 {
 public:
@@ -26,7 +27,11 @@ private:
 
     AppCore* acptr;
 
-    std::unordered_map<std::string, IModel*> engines;   // path -> instance
+    struct EngineData {
+        IModel* instance;
+        DestroyEngine destroy;
+    };
+    std::unordered_map<std::string, EngineData> engines;   // path -> data
     std::string activeEnginePath;                        // currently active engine path
     std::string pendingResolutionPath;                   // path being resolved right now
 
@@ -55,20 +60,22 @@ private:
 
     void preInitialize();
     void initialize();
-    void funcsTableResolvingRequest();
+    void funcsTableResolvingRequest(); // пусто
+    /// Активация движка от сообщения engine_resolving_respond
     void activateEngine(std::vector<void*> pointers);
+    /// Запрос на активацию конкретного движка
     void activateEngineByPath(std::string path);
     void removeEngine(std::string path);
     void setFuncs(funcMap map);
-    void getActiveFrames();
+    void getActiveFrames(); // запрос на получение указателя на очередь кадров, не актуально
     void addNames(std::vector<std::string> names);
-    void startRendering(GraphicBus bus);
+    void startRendering(GraphicBus bus); // не актуально, пусто
     void sendTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table);
-    void sendRenderer(IRenderer* ptr);
+    void sendRenderer(IRenderer* ptr); // не актуально
     void sendWinId(uintptr_t id);
-    void engTickWrapper();
+    void engTickWrapper(); // для вызова функции tick() у плагина, не актуально
     void sendViewport(ViewportWidget* vp);
-    void resize(ViewportBus b);
+    void resize(ViewportBus b); // передаёт размер viewport в плагин
     void sendDataBus(IDataBus* dbp);
 
 };

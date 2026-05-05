@@ -1,7 +1,7 @@
 #ifndef FILETYPES_H
 #define FILETYPES_H
 
-enum FTYPES {
+enum FTYPES { // TODO:пересмотреть
     BIN,
     TXT,
     JSON,

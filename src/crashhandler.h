@@ -4,6 +4,7 @@
 #include "eventmanager.h"
 #include <string>
 
+/// WIP
 class CrashHandler {
 
 private:

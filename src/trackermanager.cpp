@@ -1,4 +1,5 @@
 #include "trackermanager.h"
+#include "consts.h"
 
 TrackerManager::TrackerManager(AppCore* core) {
     this->core = core;
@@ -12,16 +13,31 @@ TrackerManager::TrackerManager(AppCore* core) {
     this->core->getEventManager().subscribe(name, "deactivate_tracker_by_path", &TrackerManager::deactivateTrackerByPath, this);
     this->core->getEventManager().subscribe(name, "remove_tracker", &TrackerManager::removeTracker, this);
     this->core->getEventManager().subscribe(name, "request_tracker_table_resend", &TrackerManager::resendTrackerTables, this);
+    this->core->getEventManager().subscribe(name, "stop_tracker", &TrackerManager::onStopTracker, this);
 }
 
 TrackerManager::~TrackerManager() {
-    for (auto& [path, tracker] : trackers) {
-        if (tracker) {
-            if (tracker->isRunning()) tracker->stop();
-            delete tracker;
+    for (auto& [path, data] : trackers) {
+        if (data.instance) {
+            if (data.instance->isRunning()) data.instance->stop();
+            data.instance->shutdown();
+            if (data.destroy) {
+                data.destroy(data.instance);
+            } else {
+                delete data.instance;
+            }
         }
     }
     trackers.clear();
+}
+
+void TrackerManager::onStopTracker() {
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+    for (auto& [path, data] : trackers) {
+        if (!data.instance) continue;
+        if (data.instance->isRunning()) data.instance->stop();
+        data.instance->shutdown();
+    }
 }
 
 std::string TrackerManager::cacheKey() const {
@@ -73,26 +89,26 @@ void TrackerManager::preInitialize() {
 }
 
 void TrackerManager::startTracking() {
-    for (auto& [path, tracker] : trackers) {
-        if (tracker && !tracker->isRunning()) {
-            tracker->start();
+    for (auto& [path, data] : trackers) {
+        if (data.instance && !data.instance->isRunning()) {
+            data.instance->start();
             std::cout << "[TrackerManager] Started: " << path << std::endl;
         }
     }
 }
 
 void TrackerManager::stopTracking() {
-    for (auto& [path, tracker] : trackers) {
-        if (tracker && tracker->isRunning()) {
-            tracker->stop();
+    for (auto& [path, data] : trackers) {
+        if (data.instance && data.instance->isRunning()) {
+            data.instance->stop();
             std::cout << "[TrackerManager] Stopped: " << path << std::endl;
         }
     }
 }
 
 bool TrackerManager::isRunning() const {
-    for (const auto& [path, tracker] : trackers) {
-        if (tracker && tracker->isRunning()) return true;
+    for (const auto& [path, data] : trackers) {
+        if (data.instance && data.instance->isRunning()) return true;
     }
     return false;
 }
@@ -121,9 +137,10 @@ void TrackerManager::activateTrackerByPath(std::string path) {
     // Already loaded — just start it
     auto it = trackers.find(path);
     if (it != trackers.end()) {
-        if (!it->second->isRunning()) {
-            it->second->start();
-            core->getEventManager().sendMessage(AppMessage(name, "send_table", it->second->getTable()));
+        if (!it->second.instance->isRunning()) {
+            it->second.instance->start();
+            core->getEventManager().sendMessage(AppMessage(name, "send_table", it->second.instance->getTable()));
+            core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
             core->getEventManager().sendMessage(AppMessage(name, "tracker_set_active", path));
         }
         return;
@@ -134,16 +151,16 @@ void TrackerManager::activateTrackerByPath(std::string path) {
     pendingResolutionPath = path;
     Meta meta;
     meta.path = path;
-    meta.func_names = {"create"};
+    meta.func_names = {"create", "destroy"};
     core->getEventManager().sendMessage(AppMessage(name, "tracking_resolving_request", meta));
     std::cout << "[TrackerManager] Resolving tracker: " << path << std::endl;
 }
 
 void TrackerManager::deactivateTrackerByPath(std::string path) {
     auto it = trackers.find(path);
-    if (it != trackers.end() && it->second) {
-        if (it->second->isRunning()) {
-            it->second->stop();
+    if (it != trackers.end() && it->second.instance) {
+        if (it->second.instance->isRunning()) {
+            it->second.instance->stop();
             std::cout << "[TrackerManager] Deactivated tracker: " << path << std::endl;
         }
     }
@@ -157,11 +174,17 @@ void TrackerManager::removeTracker(std::string path) {
         return;
     }
 
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+
     auto it = trackers.find(path);
     if (it != trackers.end()) {
-        if (it->second->isRunning()) it->second->stop();
-        it->second->shutdown();
-        delete it->second;
+        if (it->second.instance->isRunning()) it->second.instance->stop();
+        it->second.instance->shutdown();
+        if (it->second.destroy) {
+            it->second.destroy(it->second.instance);
+        } else {
+            delete it->second.instance;
+        }
         trackers.erase(it);
         std::cout << "[TrackerManager] Tracker instance destroyed: " << path << std::endl;
     }
@@ -185,15 +208,16 @@ void TrackerManager::activateTracker(std::vector<void*> pointers) {
         return;
     }
 
-    for (size_t i = 0; i < pointers.size(); ++i) {
-        if (pointers[i] == nullptr) {
-            std::cerr << "[TrackerManager] Pointer at index " << i << " is null\n";
-            pendingResolutionPath.clear();
-            return;
-        }
+    // Only 'create' (index 0) is mandatory; 'destroy' (index 1+) may be nullptr
+    if (pointers[0] == nullptr) {
+        std::cerr << "[TrackerManager] Mandatory 'create' pointer is null\n";
+        pendingResolutionPath.clear();
+        return;
     }
 
     auto c = reinterpret_cast<CreateTracker>(pointers[0]);
+    auto d = (pointers.size() > 1) ? reinterpret_cast<DestroyTracker>(pointers[1]) : nullptr;
+
     if (!c) {
         std::cerr << "[TrackerManager] Invalid 'create' pointer\n";
         pendingResolutionPath.clear();
@@ -210,17 +234,22 @@ void TrackerManager::activateTracker(std::vector<void*> pointers) {
     std::string resolvedPath = pendingResolutionPath;
     pendingResolutionPath.clear();
 
-    trackers[resolvedPath] = tracker;
+    trackers[resolvedPath] = TrackerData{tracker, d};
     tracker->start();
     core->getEventManager().sendMessage(AppMessage(name, "send_table", tracker->getTable()));
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
     core->getEventManager().sendMessage(AppMessage(name, "tracker_set_active", resolvedPath));
     std::cout << "[TrackerManager] Tracker activated: " << resolvedPath << std::endl;
 }
 
 void TrackerManager::resendTrackerTables() {
-    for (auto& [path, tracker] : trackers) {
-        if (tracker && tracker->isRunning()) {
-            core->getEventManager().sendMessage(AppMessage(name, "send_table", tracker->getTable()));
+    bool any = false;
+    for (auto& [path, data] : trackers) {
+        if (data.instance && data.instance->isRunning()) {
+            core->getEventManager().sendMessage(AppMessage(name, "send_table", data.instance->getTable()));
+            any = true;
         }
     }
+    if (any)
+        core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
 }

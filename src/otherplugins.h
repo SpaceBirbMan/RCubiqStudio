@@ -15,7 +15,12 @@ private:
     AppCore* core;
     IDataBus* data_bus = nullptr;
     std::string name = "PluginManager";
-    std::unordered_map<std::string, IGenPlugin*> plugins {};  // path -> instance
+    struct PluginData {
+        IGenPlugin* instance;
+        DestroyPlugin destroy;
+    };
+
+    std::unordered_map<std::string, PluginData> plugins {};  // path -> data
     bool need_to_set_db = false;
     std::queue<std::string> pendingPaths;  // paths currently being resolved (FIFO)
 

@@ -3,6 +3,7 @@
 
 #include "filesaver.h"
 
+/// Подлежит пересмотру
 class CrashReportManager
 {
 public:
