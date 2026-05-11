@@ -158,13 +158,28 @@ void TrackerManager::activateTrackerByPath(std::string path) {
 
 void TrackerManager::deactivateTrackerByPath(std::string path) {
     auto it = trackers.find(path);
-    if (it != trackers.end() && it->second.instance) {
-        if (it->second.instance->isRunning()) {
-            it->second.instance->stop();
-            std::cout << "[TrackerManager] Deactivated tracker: " << path << std::endl;
-        }
+    if (it == trackers.end() || !it->second.instance) {
+        activeTrackerPaths.erase(path);
+        core->getEventManager().sendMessage(AppMessage(name, "tracker_set_inactive", path));
+        return;
     }
+
+    // То же, что remove_tracker (остановка, shutdown, выгрузка DLL, снятие вкладок), но строка в toolbox и trackersRegistry остаются.
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+
+    if (it->second.instance->isRunning())
+        it->second.instance->stop();
+    it->second.instance->shutdown();
+    if (it->second.destroy) {
+        it->second.destroy(it->second.instance);
+    } else {
+        delete it->second.instance;
+    }
+    trackers.erase(it);
+
     activeTrackerPaths.erase(path);
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
+    core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
     core->getEventManager().sendMessage(AppMessage(name, "tracker_set_inactive", path));
 }
 
@@ -191,8 +206,9 @@ void TrackerManager::removeTracker(std::string path) {
 
     trackersRegistry.erase(path);
     activeTrackerPaths.erase(path);
-    core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
+    // Сначала снять Qt-виджеты с колбэками в DLL; иначе после FreeLibrary ~std::function в лямбдах даёт SIGSEGV.
     core->getEventManager().sendMessage(AppMessage(name, "tracker_ui_removed", path));
+    core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
 }
 
 void TrackerManager::activateTracker(std::vector<void*> pointers) {
@@ -235,6 +251,7 @@ void TrackerManager::activateTracker(std::vector<void*> pointers) {
     pendingResolutionPath.clear();
 
     trackers[resolvedPath] = TrackerData{tracker, d};
+    tracker->setLibraryPath(resolvedPath);
     tracker->start();
     core->getEventManager().sendMessage(AppMessage(name, "send_table", tracker->getTable()));
     core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));

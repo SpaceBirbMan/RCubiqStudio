@@ -2,6 +2,16 @@ cmake_minimum_required(VERSION 3.16)
 
 project(M3 VERSION 0.1 LANGUAGES CXX)
 
+# cpptrace: кроссплатформенные стектрейсы (https://github.com/jeremy-rifkin/cpptrace)
+set(CPPTRACE_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+include(FetchContent)
+FetchContent_Declare(
+    cpptrace
+    GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
+    GIT_TAG v1.0.4
+)
+FetchContent_MakeAvailable(cpptrace)
+
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -139,6 +149,7 @@ message(STATUS "OpenCV libs: ${OpenCV_LIBS}")
 
 target_link_libraries(
     M3 PRIVATE
+    cpptrace::cpptrace
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Quick
     Qt${QT_VERSION_MAJOR}::QuickWidgets
@@ -169,6 +180,7 @@ if(WIN32)
         oleaut32
         uuid
         shell32
+        psapi
     )
 endif()
 

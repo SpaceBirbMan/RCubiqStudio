@@ -1,4 +1,6 @@
 #include "viewportwidget.h"
+#include "misc.h"
+#include "databus.h"
 #include "controllayer.h"
 #include <functional>
 #include <QDebug>
@@ -40,7 +42,9 @@ ViewportWidget::ViewportWidget(AppCore* core, QWidget* parent)
     core->getEventManager().subscribe(name, "get_win_id", &ViewportWidget::initialize, this);
     core->getEventManager().subscribe(name, "get_rec", &ViewportWidget::setReceiver, this);
     core->getEventManager().subscribe(name, "schedule_engine_delete", &ViewportWidget::scheduleEngineDelete, this);
-    core->getEventManager().getBusPtr()->registerData("window_handle", winId());
+    canonical_win_id_ = static_cast<uintptr_t>(winId());
+    if (auto* hw = bus_handle_cast<uintptr_t>(core->getEventManager().getBusPtr(), "window_handle"))
+        hw->setLive(&canonical_win_id_);
     this->viewport_size[0] = this->size().width();
     this->viewport_size[1] = this->size().height();
 
@@ -95,6 +99,7 @@ void ViewportWidget::connectToTimer(std::function<void()> fn) {
         }
 
         if (this->ren_pip_ptr) {
+            std::lock_guard<std::mutex> pipLock{HostInterop::renderPipelineMutex()};
             for (auto& func : *this->ren_pip_ptr) {
                 if (func) {
                     func();

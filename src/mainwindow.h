@@ -7,12 +7,12 @@
 #include <QTableWidget>
 #include <QTimer>
 #include <QFileDialog>
+#include <QTabWidget>
 #include "devices.h"
 #include <QLabel>
 #include <QCheckBox>
 #include <unordered_map>
 #include <memory>
-
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
@@ -57,15 +57,22 @@ private:
     /** Stream viewport to OBS Virtual Camera (DirectShow, shared memory NV12). */
     std::unique_ptr<ObsVirtualCamera> m_obsVirtualCam;
 
-    // Plugin page tracking: path -> entry info
+    // Plugin toolbox + динамические вкладки: путь DLL → вкладки с property m3_plugin_library_path
     std::unordered_map<std::string, PluginPageEntry> pluginPageEntries;
+    /// Последний движок, отрисованный во вкладках слева (для смены активного без снятия панелей чужих путей).
+    std::string lastRenderedEngineLibraryPath;
     // For engine checkbox exclusivity
     std::vector<QCheckBox*> engineCheckboxes;
 
+    static void removeTabsOwnedByLibraryPath(QTabWidget* tabs, const std::string& libraryPath);
+
+    /// Удалить вкладки, принадлежащие DLL (оба боковых таба); строка в toolbox не трогается.
+    void uiTeardownPluginTabs(std::string path);
+
     void showCacheErrorMessage();
     void setControlsTable(std::unordered_map<std::string, std::string> table);
-    void initDynamicUi(std::shared_ptr<std::vector<RUI::UiPage>> pages);
-    void initTrackerDynamicUi(std::unordered_map<std::string, RUI::UiPage>* pages);
+    void initDynamicUi(PluginUiEngineTrees submission);
+    void initTrackerDynamicUi(PluginUiTrackerTrees submission);
     void connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr); // не актуально
     void setRenderApi();
     void initialize();

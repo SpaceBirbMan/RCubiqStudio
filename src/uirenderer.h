@@ -26,6 +26,7 @@
 #include <QFrame>
 #include <QMenu>
 #include <QMenuBar>
+#include <string>
 
 #include "abstractuinodes.h"
 
@@ -48,8 +49,10 @@ public:
     static QWidget* renderCanvas(UiCanvas* canvas);
     static QWidget* renderToolBox(UiToolBox* toolbox);
 
-    static void renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget);
-    static void renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget);
+    static void renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget,
+                                  const std::string& pluginLibraryPath = {});
+    static void renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget,
+                                  const std::string& pluginLibraryPath = {});
 };
 
 #endif // UIRENDERER_H

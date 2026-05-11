@@ -3,6 +3,7 @@
 
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <functional>
 #include <any>
 #include <mutex>
@@ -14,6 +15,15 @@
 // а хост (движок) читает из другого потока (например control_table).
 namespace M3Stream {
 inline std::mutex& streamBusMutex() {
+    static std::mutex m;
+    return m;
+}
+}
+
+/// Общий мьютекс для `render_pipeline` на шине: плагин меняет вектор (emplace / nullptr),
+/// хост итерирует на тике — без блокировки возможна гонка.
+namespace HostInterop {
+inline std::mutex& renderPipelineMutex() {
     static std::mutex m;
     return m;
 }
@@ -119,13 +129,32 @@ struct PluginUIInfo {
     PluginUIType type;
 };
 
-#include "ieventmanager.h"
+/// Описание деревьев интерфейса движка: путь DLL + идентификатор для AppMessage::sender + указатель на страницы.
+struct PluginUiEngineTrees {
+    std::string libraryPath;
+    std::string pluginMessagingId;
+    std::shared_ptr<std::vector<RUI::UiPage>> pages;
+};
 
+/// Описание вкладок интерфейса трекера (карта имя → страница, как на шине `trakers_gui_pages`).
+struct PluginUiTrackerTrees {
+    std::string libraryPath;
+    std::string pluginMessagingId;
+    std::unordered_map<std::string, RUI::UiPage>* trees = nullptr;
+};
+
+#include "ieventmanager.h"
+class BusHandleBase;
 class IDataBus {
 public:
     virtual void registerData(const std::string& key, std::any data) = 0;
     virtual std::any& getData(const std::string& key) = 0;
     virtual void remove(const std::string& key) = 0;
+
+    /// Зарегистрировать «живой канал»: при clearLive указатели остаются валидными, чтение даёт локальный дефолт шины.
+    virtual void registerBusHandle(const std::string& key, std::unique_ptr<BusHandleBase> handle) = 0;
+    virtual BusHandleBase* tryBusHandle(const std::string& key) noexcept = 0;
+    virtual void clearBusHandleLive(const std::string& key) noexcept = 0;
 };
 
 class ITracker {
@@ -133,6 +162,8 @@ public:
     ITracker() = default;
     ITracker(IEventManager* eventManager, IDataBus* dataBus) {}
     virtual ~ITracker() = default;
+    /// Путь загруженной DLL; хост вызывает после create, до start (чтобы UI знал ключ для реестра вкладок).
+    virtual void setLibraryPath(const std::string& /*path*/) {}
     /// Остановить потоки и снять с шины все указатели на память этого модуля до выгрузки DLL.
     virtual void shutdown() {}
     virtual bool start() = 0;
@@ -165,6 +196,8 @@ public:
     IModel(IEventManager* eventManager, IDataBus* dbus) {}
     virtual ~IModel() = default;
     virtual void shutdown() {}
+    /// Путь загруженной DLL; вызывается хостом до test()/первой публикации UI.
+    virtual void setLibraryPath(const std::string& /*path*/) {}
     virtual void test() = 0;
     virtual std::shared_ptr<std::vector<RUI::UiPage>> getUiPages() = 0;
     virtual void setDataBus(IDataBus* db) = 0;
@@ -179,6 +212,8 @@ public:
     IGenPlugin() = default;
     IGenPlugin(IEventManager* eventManager, IDataBus* dataBus) {}
     virtual ~IGenPlugin() = default;
+    /// Путь пакета (.ofp) / модуля — для тегирования вкладок (m3_plugin_library_path) при init_ui_eng из плагина.
+    virtual void setLibraryPath(const std::string& /*path*/) {}
     /// Снять привязки к шине (control_table и т.д.) до выгрузки DLL — иначе остаются висячие указатели.
     virtual void shutdown() {}
     virtual bool isActive() const { return true; }

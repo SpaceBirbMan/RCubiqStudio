@@ -75,6 +75,8 @@ int main(int argc, char *argv[])
     TrackerManager *tkm = new TrackerManager(core);
     OtherPlugins *op = new OtherPlugins(core); // <-- должен создаваться последним
 
+    core->getCrashHandler().publishPendingIfAny();
+
     // core->registerModule(dtm->name);
     core->registerModule(egm->name);
     //core->registerModule(renm->cacheKey());

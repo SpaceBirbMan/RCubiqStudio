@@ -1,3 +1,4 @@
+#include "consts.h"
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include <QQuickView>
@@ -10,6 +11,8 @@
 #include "trackerrenderer.h"
 #include <QDebug>
 #include <QTimer>
+#include "databus.h"
+#include "bushandle.h"
 #include <qobjectdefs.h>
 #include <qthread.h>
 #include <QMetaObject>
@@ -20,6 +23,8 @@
 #include <QPalette>
 #include <QEvent>
 #include <QDockWidget>
+#include <QDir>
+#include <QFileInfo>
 #include <any>
 #include <atomic>
 #include <algorithm>
@@ -28,7 +33,50 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <psapi.h>
 #endif
+
+namespace {
+
+bool pluginPathsMatch(const QString& a, const QString& b)
+{
+    if (a.isEmpty() || b.isEmpty())
+        return false;
+    const QString ca = QDir::cleanPath(a);
+    const QString cb = QDir::cleanPath(b);
+    if (ca == cb)
+        return true;
+#if defined(Q_OS_WIN)
+    if (ca.compare(cb, Qt::CaseInsensitive) == 0)
+        return true;
+#endif
+    const QFileInfo fa(ca), fb(cb);
+    if (fa.exists() && fb.exists()) {
+        const QString c1 = fa.canonicalFilePath();
+        const QString c2 = fb.canonicalFilePath();
+        if (!c1.isEmpty() && !c2.isEmpty() && c1 == c2)
+            return true;
+    }
+    return false;
+}
+
+bool subtreeHasPluginPath(QWidget* root, const QString& needlePath)
+{
+    if (!root)
+        return false;
+    const QVariant v = root->property("m3_plugin_library_path");
+    if (v.isValid() && pluginPathsMatch(v.toString(), needlePath))
+        return true;
+    for (QObject* ch : root->children()) {
+        if (auto* cw = qobject_cast<QWidget*>(ch)) {
+            if (subtreeHasPluginPath(cw, needlePath))
+                return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
 
 MainWindow::MainWindow(QWidget *parent, AppCore *core)
     : QMainWindow(parent)
@@ -75,8 +123,8 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     // Event subscriptions
     core->getEventManager().subscribe("cache_err", &MainWindow::showCacheErrorMessage, this);
     core->getEventManager().subscribe("send_control_table", &MainWindow::setControlsTable, this);
-    core->getEventManager().subscribe("init_ui_eng", &MainWindow::initDynamicUi, this);
-    core->getEventManager().subscribe<std::unordered_map<std::string, RUI::UiPage>*>("init_ui_tracker", &MainWindow::initTrackerDynamicUi, this);
+    core->getEventManager().subscribe<PluginUiEngineTrees>("init_ui_eng", &MainWindow::initDynamicUi, this);
+    core->getEventManager().subscribe<PluginUiTrackerTrees>("init_ui_tracker", &MainWindow::initTrackerDynamicUi, this);
     core->getEventManager().subscribe("initialize", &MainWindow::initialize, this);
     core->getEventManager().subscribe(name, "send_table", &MainWindow::initTrackerTable, this);
 
@@ -88,8 +136,11 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     core->getEventManager().subscribe(name, "tracker_ui_removed",   &MainWindow::uiRemovePluginEntry, this);
     core->getEventManager().subscribe(name, "gen_plugin_ui_removed",&MainWindow::uiRemovePluginEntry, this);
 
+    core->getEventManager().subscribe(name, M3Events::kPluginRuntimeTeardown, &MainWindow::uiTeardownPluginTabs, this);
+
     // Active state restore signals
     core->getEventManager().subscribe(name, "engine_set_active",       &MainWindow::uiSetPluginActive, this);
+    core->getEventManager().subscribe(name, "engine_set_inactive",     &MainWindow::uiSetPluginInactive, this);
     core->getEventManager().subscribe(name, "tracker_set_active",      &MainWindow::uiSetPluginActive, this);
     core->getEventManager().subscribe(name, "tracker_set_inactive",    &MainWindow::uiSetPluginInactive, this);
     core->getEventManager().subscribe(name, "gen_plugin_activated",    &MainWindow::uiSetPluginActive, this);
@@ -184,6 +235,36 @@ void MainWindow::changeEvent(QEvent* event)
         }
     }
     QMainWindow::changeEvent(event);
+}
+
+void MainWindow::removeTabsOwnedByLibraryPath(QTabWidget* tabs, const std::string& libraryPath)
+{
+    if (!tabs || libraryPath.empty())
+        return;
+    const QString needle = QString::fromStdString(libraryPath);
+    for (int i = tabs->count() - 1; i >= 0; --i) {
+        QWidget* w = tabs->widget(i);
+        if (!w)
+            continue;
+        if (subtreeHasPluginPath(w, needle)) {
+            tabs->removeTab(i);
+            delete w;
+        }
+    }
+}
+
+void MainWindow::uiTeardownPluginTabs(std::string path)
+{
+    if (QThread::currentThread() != qApp->thread()) {
+        QMetaObject::invokeMethod(this, [this, p = std::move(path)]() mutable {
+            uiTeardownPluginTabs(std::move(p));
+        }, Qt::BlockingQueuedConnection);
+        return;
+    }
+    if (lastRenderedEngineLibraryPath == path)
+        lastRenderedEngineLibraryPath.clear();
+    removeTabsOwnedByLibraryPath(ui->leftPanel, path);
+    removeTabsOwnedByLibraryPath(ui->rightPanel, path);
 }
 
 MainWindow::~MainWindow()
@@ -358,15 +439,27 @@ void MainWindow::uiAddPluginEntry(PluginUIInfo info) {
         connect(checkBox, &QCheckBox::toggled, this,
                 [this, path = info.path, checkBox](bool checked) {
             if (checked) {
-                // Exclusive: uncheck all other engine checkboxes
+                // Exclusive: deactivate other loaded engines (вкладки + выгрузка DLL)
                 for (QCheckBox* cb : engineCheckboxes) {
                     if (cb != checkBox && cb->isChecked()) {
+                        std::string prevPath;
+                        for (const auto& [p, ent] : pluginPageEntries) {
+                            if (ent.checkBox == cb && ent.type == PluginUIType::Engine) {
+                                prevPath = p;
+                                break;
+                            }
+                        }
                         cb->blockSignals(true);
                         cb->setChecked(false);
                         cb->blockSignals(false);
+                        if (!prevPath.empty())
+                            core->getEventManager().sendMessage(
+                                AppMessage(name, "deactivate_engine_by_path", prevPath));
                     }
                 }
                 core->getEventManager().sendMessage(AppMessage(name, "activate_engine_by_path", path));
+            } else {
+                core->getEventManager().sendMessage(AppMessage(name, "deactivate_engine_by_path", path));
             }
         });
     } else if (info.type == PluginUIType::Tracker) {
@@ -499,7 +592,7 @@ void MainWindow::uiRemovePluginEntry(std::string path) {
     if (QThread::currentThread() != qApp->thread()) {
         QMetaObject::invokeMethod(this, [this, path]() {
             this->uiRemovePluginEntry(path);
-        }, Qt::QueuedConnection);
+        }, Qt::BlockingQueuedConnection);
         return;
     }
 
@@ -510,6 +603,23 @@ void MainWindow::uiRemovePluginEntry(std::string path) {
     }
 
     const PluginPageEntry& entry = it->second;
+
+    switch (entry.type) {
+    case PluginUIType::Engine:
+        removeTabsOwnedByLibraryPath(ui->leftPanel, path);
+        if (lastRenderedEngineLibraryPath == path)
+            lastRenderedEngineLibraryPath.clear();
+        break;
+    case PluginUIType::Tracker:
+        removeTabsOwnedByLibraryPath(ui->rightPanel, path);
+        break;
+    case PluginUIType::Generic:
+        removeTabsOwnedByLibraryPath(ui->leftPanel, path);
+        removeTabsOwnedByLibraryPath(ui->rightPanel, path);
+        break;
+    default:
+        break;
+    }
 
     // Remove from engineCheckboxes list if engine type
     if (entry.type == PluginUIType::Engine && entry.checkBox) {
@@ -673,51 +783,74 @@ void MainWindow::onSaveFileClicked() {
 
 void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> table) {}
 
-void MainWindow::initDynamicUi(std::shared_ptr<std::vector<RUI::UiPage>> pages) {
-    if (!pages) return;
-    QMetaObject::invokeMethod(this, [this, pages]() {
-        while (ui->leftPanel->count() > 0) {
-            QWidget* w = ui->leftPanel->widget(0);
-            ui->leftPanel->removeTab(0);
-            delete w;
-        }
-        for (size_t i = 0; i < pages->size(); ++i) {
-            auto root = std::make_shared<RUI::UiPage>((*pages)[i]);
-            UiRenderer::renderToTabWidget(root, ui->leftPanel);
-        }
-    }, Qt::QueuedConnection);
+void MainWindow::initDynamicUi(PluginUiEngineTrees submission) {
+    if (!submission.pages)
+        return;
+    QMetaObject::invokeMethod(this,
+        [this, submission = std::move(submission)]() mutable {
+            if (!submission.pages)
+                return;
+            if (!lastRenderedEngineLibraryPath.empty()
+                && lastRenderedEngineLibraryPath != submission.libraryPath) {
+                removeTabsOwnedByLibraryPath(ui->leftPanel, lastRenderedEngineLibraryPath);
+            }
+            lastRenderedEngineLibraryPath = submission.libraryPath;
+            removeTabsOwnedByLibraryPath(ui->leftPanel, submission.libraryPath);
+            const std::string pathTag = submission.libraryPath;
+            for (size_t i = 0; i < submission.pages->size(); ++i) {
+                auto root = std::make_shared<RUI::UiPage>((*submission.pages)[i]);
+                UiRenderer::renderToTabWidget(root, ui->leftPanel, pathTag);
+            }
+        }, Qt::QueuedConnection);
 }
 
 void MainWindow::updateResourceLabels()
 {
 #ifdef _WIN32
-    struct CpuSnap {
-        FILETIME idle{}, kernel{}, user{};
-        bool     valid = false;
-    };
-    static CpuSnap s_cpu;
-    FILETIME idle{}, kernel{}, user{};
-    if (GetSystemTimes(&idle, &kernel, &user)) {
-        if (s_cpu.valid) {
-            auto toU64 = [](const FILETIME& ft) -> uint64_t {
-                return (uint64_t(ft.dwHighDateTime) << 32) | uint64_t(ft.dwLowDateTime);
-            };
-            const uint64_t idleD = toU64(idle) - toU64(s_cpu.idle);
-            const uint64_t kd   = toU64(kernel) - toU64(s_cpu.kernel);
-            const uint64_t ud   = toU64(user) - toU64(s_cpu.user);
-            const uint64_t sys  = kd + ud;
-            const float pct = sys > 0 ? (100.f * float(sys - idleD) / float(sys)) : 0.f;
+    // CPU: доля использования всех логических CPU процессом (0–100% ≈ доля мощности машины).
+    static LARGE_INTEGER s_cpu_freq{};
+    static bool s_have_cpu_freq = false;
+    if (!s_have_cpu_freq) {
+        s_have_cpu_freq = QueryPerformanceFrequency(&s_cpu_freq) && s_cpu_freq.QuadPart != 0;
+    }
+    LARGE_INTEGER qpc_now{};
+    QueryPerformanceCounter(&qpc_now);
+
+    static FILETIME s_prev_k{}, s_prev_u{};
+    static LARGE_INTEGER s_prev_qpc{};
+    static bool s_have_cpu_snap = false;
+
+    FILETIME ft_cre{}, ft_ext{}, ft_kern{}, ft_user{};
+    if (GetProcessTimes(GetCurrentProcess(), &ft_cre, &ft_ext, &ft_kern, &ft_user) && s_have_cpu_freq) {
+        auto ft_to_u64 = [](const FILETIME& ft) -> uint64_t {
+            return (uint64_t(ft.dwHighDateTime) << 32) | uint64_t(ft.dwLowDateTime);
+        };
+        if (s_have_cpu_snap) {
+            const uint64_t dk = ft_to_u64(ft_kern) - ft_to_u64(s_prev_k);
+            const uint64_t du = ft_to_u64(ft_user) - ft_to_u64(s_prev_u);
+            const uint64_t dproc = dk + du;
+            const double elapsed =
+                double(qpc_now.QuadPart - s_prev_qpc.QuadPart) / double(s_cpu_freq.QuadPart);
+            SYSTEM_INFO si{};
+            GetSystemInfo(&si);
+            const int ncpu = (std::max)(1, static_cast<int>(si.dwNumberOfProcessors));
+            const float pct = (elapsed > 1e-6)
+                ? float((100.0 * (dproc / 1e7)) / (elapsed * static_cast<double>(ncpu)))
+                : 0.f;
             ui->cpu_label->setText(tr("CPU: %1%").arg(QString::number(int(pct + 0.5f))));
         }
-        s_cpu.idle = idle;
-        s_cpu.kernel = kernel;
-        s_cpu.user = user;
-        s_cpu.valid = true;
+        s_prev_k = ft_kern;
+        s_prev_u = ft_user;
+        s_prev_qpc = qpc_now;
+        s_have_cpu_snap = true;
     }
-    MEMORYSTATUSEX ms{};
-    ms.dwLength = sizeof(ms);
-    if (GlobalMemoryStatusEx(&ms)) {
-        ui->ram_label->setText(tr("RAM: %1%").arg(int(ms.dwMemoryLoad)));
+
+    PROCESS_MEMORY_COUNTERS_EX mem{};
+    mem.cb = sizeof(mem);
+    if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&mem),
+                             sizeof(mem))) {
+        const double mb = static_cast<double>(mem.WorkingSetSize) / (1024.0 * 1024.0);
+        ui->ram_label->setText(tr("RAM: %1 MB").arg(QString::number(mb, 'f', mb >= 100.0 ? 0 : 1)));
     }
 #else
     ui->cpu_label->setText(tr("CPU: —"));
@@ -725,10 +858,9 @@ void MainWindow::updateResourceLabels()
 #endif
 
     try {
-        std::any& a = core->getEventManager().getBusPtr()->getData("engine_gpu_load");
-        auto* p = std::any_cast<std::atomic<float>*>(a);
-        if (p) {
-            const float v = p->load(std::memory_order_relaxed);
+        IDataBus* bus = core->getEventManager().getBusPtr();
+        if (auto* ch = bus_handle_cast_derived<AtomicFloatLiveChannel>(bus, "engine_gpu_load")) {
+            const float v = ch->load_relaxed();
             ui->gpu_label->setText(tr("GPU: %1%").arg(QString::number(int(v + 0.5f))));
             ui->gpu_label->setVisible(true);
         } else {
@@ -739,13 +871,22 @@ void MainWindow::updateResourceLabels()
     }
 }
 
-void MainWindow::initTrackerDynamicUi(std::unordered_map<std::string, RUI::UiPage>* pages) {
-    if (!pages) return;
-    QMetaObject::invokeMethod(this, [this, pages]() {
-        for (const auto& [pageName, page] : *pages) {
-            UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(page), ui->rightPanel);
-        }
-    }, Qt::QueuedConnection);
+void MainWindow::initTrackerDynamicUi(PluginUiTrackerTrees submission) {
+    if (!submission.trees)
+        return;
+    QMetaObject::invokeMethod(this,
+        [this, submission = std::move(submission)]() mutable {
+            if (!submission.trees)
+                return;
+            removeTabsOwnedByLibraryPath(ui->rightPanel, submission.libraryPath);
+            const std::string pathTag = submission.libraryPath;
+            for (const auto& [tabTitle, page] : *submission.trees) {
+                (void)tabTitle;
+                UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(page),
+                                              ui->rightPanel,
+                                              pathTag);
+            }
+        }, Qt::QueuedConnection);
 }
 
 void MainWindow::connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr) {}

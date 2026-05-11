@@ -65,6 +65,8 @@ private:
     void activateEngine(std::vector<void*> pointers);
     /// Запрос на активацию конкретного движка
     void activateEngineByPath(std::string path);
+    /// Выгрузка экземпляра и вкладок; запись в реестре и строка toolbox остаются.
+    void deactivateEngineByPath(std::string path);
     void removeEngine(std::string path);
     void setFuncs(funcMap map);
     void getActiveFrames(); // запрос на получение указателя на очередь кадров, не актуально

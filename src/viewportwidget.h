@@ -87,6 +87,9 @@ private:
     void scheduleEngineDelete(std::pair<IModel*, std::string> info);
 
     int viewport_size[2] {0, 0};
+
+    /// WinId видаviewport (стабильный для канала window_handle на шине).
+    uintptr_t canonical_win_id_ = 0;
 };
 
 #endif // VIEWPORTWIDGET_H

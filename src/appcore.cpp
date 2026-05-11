@@ -1,5 +1,25 @@
 #include "appcore.h"
 #include "eventmanager.h"
+#include "bushandle.h"
+#include <deque>
+#include <string>
+
+/// Каналы «живые указатели от плагина / дефолт на шине» — создаются один раз при старте хоста.
+static void ensureEngineLivePublishChannels(IDataBus* bus)
+{
+    if (!bus || bus->tryBusHandle("render_backend"))
+        return;
+    bus->registerBusHandle("render_backend",
+        std::make_unique<BusHandle<std::string>>(std::string("none")));
+    bus->registerBusHandle("render_device",
+        std::make_unique<BusHandle<uintptr_t>>(uintptr_t{}));
+    bus->registerBusHandle("frames_buffer",
+        std::make_unique<BusHandle<std::deque<void*>>>(std::deque<void*>{}));
+    bus->registerBusHandle("window_handle",
+        std::make_unique<BusHandle<uintptr_t>>(uintptr_t{}));
+    bus->registerBusHandle("engine_gpu_load",
+        std::make_unique<AtomicFloatLiveChannel>());
+}
 
 /// Самый основной модуль
 AppCore::AppCore() : eventManager() {
@@ -17,6 +37,11 @@ AppCore::AppCore() : eventManager() {
     this->eventManager.getBusPtr()->registerData("control_table", std::unordered_map<std::string, std::shared_ptr<void>> {});
     this->eventManager.getBusPtr()->registerData("engines_gui_pages", std::unordered_map<std::string, RUI::UiPage> {});
     this->eventManager.getBusPtr()->registerData("trakers_gui_pages", std::unordered_map<std::string, RUI::UiPage> {});
+
+    ensureEngineLivePublishChannels(this->eventManager.getBusPtr());
+
+    crashHandler = std::make_unique<CrashHandler>(eventManager);
+    crashHandler->install();
 }
 
 void AppCore::startInitialization() {

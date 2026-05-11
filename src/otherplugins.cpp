@@ -68,6 +68,7 @@ void OtherPlugins::addPaths(std::vector<std::string> paths) {
         // If already loaded — just re-notify UI (UI deduplicates via pluginPageEntries)
         auto it = plugins.find(path);
         if (it != plugins.end()) {
+            it->second.instance->setLibraryPath(path);
             PluginUIInfo info;
             info.name = it->second.instance->getName();
             info.path = path;
@@ -145,6 +146,8 @@ void OtherPlugins::registerPlugin(std::vector<void*> pointers) {
         return;
     }
 
+    plugin->setLibraryPath(path);
+
     try {
         if (this->data_bus) {
             plugin->setDataBus(this->data_bus);
@@ -195,10 +198,9 @@ void OtherPlugins::deletePlugin(std::string path) {
     pluginsRegistry.erase(path);
     activePluginPaths.erase(path);
 
-    // Ask DataManager to unload the DLL
-    core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
-    // Notify UI to remove the page
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
     core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_removed", path));
+    core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
 }
 
 void OtherPlugins::disablePlugin(std::string path) {
@@ -211,7 +213,10 @@ void OtherPlugins::disablePlugin(std::string path) {
         std::cerr << "[OtherPlugins] disablePlugin: plugin not loaded: " << path << "\n";
         return;
     }
-    // Shutdown and destroy instance, but keep in registry
+
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+
+    // Destroy instance before UI teardown / FreeLibrary (как при удалении, но запись в реестре остаётся).
     it->second.instance->shutdown();
     if (it->second.destroy) {
         it->second.destroy(it->second.instance);
@@ -220,9 +225,9 @@ void OtherPlugins::disablePlugin(std::string path) {
     }
     plugins.erase(it);
     activePluginPaths.erase(path);
-    // Unload the DLL (will be reloaded on enablePlugin)
+
+    core->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
     core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
-    // Notify UI to uncheck the checkbox
     core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_deactivated", path));
     std::cout << "[OtherPlugins] Plugin disabled: " << path << std::endl;
 }

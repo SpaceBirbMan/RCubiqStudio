@@ -1019,7 +1019,8 @@ QWidget* UiRenderer::renderToolBox(UiToolBox* toolbox) {
 //  Root renderer into QTabWidget
 ///////////////////////////////////////////////////////////////
 
-void UiRenderer::renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget) {
+void UiRenderer::renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget,
+                                   const std::string& pluginLibraryPath) {
     if (!root || !tabTarget) return;
 
     QWidget* content = renderPage(root.get());
@@ -1027,15 +1028,18 @@ void UiRenderer::renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tab
         // Append in order; UiPage::getIndex() is often unset (0 for all) and must not be used as tab slot.
         const int idx = tabTarget->count();
         tabTarget->insertTab(idx, content, QString::fromStdString(root->getTitle()));
+        if (!pluginLibraryPath.empty())
+            content->setProperty("m3_plugin_library_path", QString::fromStdString(pluginLibraryPath));
     }
 }
 
-void UiRenderer::renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget) {
+void UiRenderer::renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget,
+                                   const std::string& pluginLibraryPath) {
     if (!tabTarget) return;
 
     for (const auto& page : pages) {
         if (page) {
-            renderToTabWidget(page, tabTarget);
+            renderToTabWidget(page, tabTarget, pluginLibraryPath);
         }
     }
 }

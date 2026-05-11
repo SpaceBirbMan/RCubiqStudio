@@ -15,6 +15,7 @@ EngineManager::EngineManager(AppCore* acptr) {
     acptr->getEventManager().subscribe(name, "send_vp", &EngineManager::sendViewport, this);
     acptr->getEventManager().subscribe(name, "send_dbus_e", &EngineManager::sendDataBus, this);
     acptr->getEventManager().subscribe(name, "activate_engine_by_path", &EngineManager::activateEngineByPath, this);
+    acptr->getEventManager().subscribe(name, "deactivate_engine_by_path", &EngineManager::deactivateEngineByPath, this);
     acptr->getEventManager().subscribe(name, "remove_engine", &EngineManager::removeEngine, this);
 }
 
@@ -74,12 +75,17 @@ void EngineManager::activateEngineByPath(std::string path) {
         return;
     }
 
-    // Already loaded — just switch to it
+    // Already loaded — switch tick/UI (test() + win id refresh republish init_ui_eng)
     auto it = engines.find(path);
     if (it != engines.end()) {
         activeEnginePath = path;
         tickWrapper = [this, path]() { engines.at(path).instance->tick(); };
-        acptr->getEventManager().sendMessage(AppMessage(name, "engine_ready", tickWrapper));
+        try {
+            it->second.instance->test();
+        } catch (...) {
+            std::cout << "[EngineManager] test() on re-activate failed\n";
+        }
+        acptr->getEventManager().sendMessage(AppMessage(name, "get_win_id", 0));
         std::cout << "[EngineManager] Switched to already-loaded engine: " << path << std::endl;
         return;
     }
@@ -91,6 +97,41 @@ void EngineManager::activateEngineByPath(std::string path) {
     meta.func_names = {"create_engine", "destroy_engine"};
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_resolving_request", meta));
     std::cout << "[EngineManager] Resolving engine: " << path << std::endl;
+}
+
+void EngineManager::deactivateEngineByPath(std::string path) {
+    if (path.empty()) {
+        std::cerr << "[EngineManager] deactivateEngineByPath called with empty path\n";
+        return;
+    }
+
+    acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+
+    auto it = engines.find(path);
+    if (it != engines.end()) {
+        EngineData data = it->second;
+        engines.erase(it);
+
+        data.instance->shutdown();
+
+        struct EngineDeleteInfo {
+            IModel* engine;
+            DestroyEngine destroy;
+            std::string path;
+        };
+        EngineDeleteInfo info = {data.instance, data.destroy, path};
+        acptr->getEventManager().sendMessage(AppMessage(name, "schedule_engine_delete", info));
+        std::cout << "[EngineManager] Engine deactivated; delete scheduled: " << path << std::endl;
+    }
+
+    if (activeEnginePath == path) {
+        activeEnginePath.clear();
+        tickWrapper = nullptr;
+        std::cout << "[EngineManager] Active engine cleared (deactivate)\n";
+    }
+
+    acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
+    acptr->getEventManager().sendMessage(AppMessage(name, "engine_set_inactive", path));
 }
 
 void EngineManager::removeEngine(std::string path) {
@@ -133,7 +174,8 @@ void EngineManager::removeEngine(std::string path) {
         std::cout << "[EngineManager] Active engine cleared\n";
     }
 
-    // Notify UI to remove the page
+    acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
+    // Notify UI to remove the page (и вкладки — дубль с teardown, порядок как у gen_plugin)
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_ui_removed", path));
 }
 
@@ -183,11 +225,15 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
     engines[resolvedPath] = EngineData{eng, de};
     activeEnginePath = resolvedPath;
 
-    eng->test();
+    eng->setLibraryPath(resolvedPath);
     try {
-        std::shared_ptr<std::vector<RUI::UiPage>> rp2 = eng->getUiPages();
+        eng->test();
+    } catch (...) {
+        std::cout << "[EngineManager] Engine test() failed\n";
+    }
+    try {
+        auto rp2 = eng->getUiPages();
         std::cout << "[EngineManager] UI pages: " << rp2->size() << std::endl;
-        acptr->getEventManager().sendMessage(AppMessage(name, "init_ui_eng", rp2));
     } catch (...) {
         std::cout << "[EngineManager] getUiPages failed\n";
     }

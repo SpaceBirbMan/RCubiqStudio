@@ -3,6 +3,7 @@
 
 #include "eventmanager.h"
 #include <iostream>
+#include <memory>
 #include <vector>
 #include "crashhandler.h"
 
@@ -14,6 +15,8 @@ public:
     EventManager& getEventManager() {
         return eventManager;
     }
+
+    CrashHandler& getCrashHandler() { return *crashHandler; }
 
     // вынести subscribe, send и прочее
 
@@ -34,7 +37,7 @@ private:
 
     EventQueue *eQueuePointer = nullptr;
     EventManager eventManager;
-    CrashHandler* crashHandler = nullptr;
+    std::unique_ptr<CrashHandler> crashHandler;
 
     void dummyFunction() {
         std::cout<< eQueuePointer->logQueue() << std::endl;
