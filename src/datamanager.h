@@ -7,7 +7,10 @@
 #include "cachemanager.h"
 #include "crashreportmanager.h"
 #include "dynamiclibrary.h"
+#include "pluginfilebroker.h"
+#include "plugindevicebroker.h"
 #include <any>
+#include <memory>
 #include <vector>
 #include "misc.h"
 #include <unordered_map>
@@ -32,6 +35,9 @@ private:
     ModelManager modelManager = ModelManager(); // были указатели, вспомнить зачем
     CacheManager cacheManager;
     CrashReportManager crashReportManager;
+
+    std::unique_ptr<PluginFileBrokerImpl> pluginFileBroker_;
+    std::unique_ptr<PluginDeviceBrokerImpl> pluginDeviceBroker_;
 
     std::unordered_map<std::string, std::shared_ptr<DynamicLibrary>> libsPool {};
 

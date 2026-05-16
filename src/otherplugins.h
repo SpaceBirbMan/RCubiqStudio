@@ -43,9 +43,15 @@ private:
     }
 
     void deserializeCache(const nlohmann::json& data) override {
-        pluginsRegistry = data["pluginsRegistry"];
-        if (data.contains("activePluginPaths"))
-            activePluginPaths = data["activePluginPaths"];
+        if (data.contains("pluginsRegistry") && data["pluginsRegistry"].is_array())
+            pluginsRegistry = data["pluginsRegistry"].get<std::set<std::string>>();
+        else
+            pluginsRegistry.clear();
+
+        if (data.contains("activePluginPaths") && data["activePluginPaths"].is_array())
+            activePluginPaths = data["activePluginPaths"].get<std::set<std::string>>();
+        else
+            activePluginPaths.clear();
     }
 
 public:

@@ -17,6 +17,10 @@ public:
     virtual void subscribe(const std::string& msg, std::function<void(const std::any&)> fn) = 0;
     virtual void subscribe(const std::string& rec, const std::string& msg, std::function<void(const std::any&)> fn) = 0;
 
+    /// Remove all subscriptions registered with this receiver id (matches subStruct.receiver).
+    /// Plugins must call this from shutdown() before the instance is destroyed.
+    virtual void unsubscribeReceiver(const std::string& receiver) = 0;
+
     template <typename C>
     void subscribe(const std::string& msg, void (C::*method)(), C* instance) {
         auto callback = [instance, method](const std::any&) {
@@ -54,6 +58,9 @@ public:
     }
 
     virtual void sendMessage(AppMessage message) = 0;
+
+    /// Вызывает подписчиков по теме сообщения сразу, на стеке текущего потока (без постановки в очередь).
+    virtual void dispatchImmediately(const AppMessage& message) = 0;
 };
 
 #endif // IEVENTMANAGER_H

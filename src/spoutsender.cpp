@@ -1,74 +1,159 @@
-// #include "spoutsender.h"
+#include "spoutsender.h"
 
-// #ifdef WIN32
-// #if defined(USE_SPOUT_DX) || defined(USE_SPOUT_DX12) || defined(USE_SPOUT_DX9)
-// #include <d3d11.h>
-// #include "SpoutDX/SpoutDX.h"
-// #elif defined(USE_SPOUT_GL)
-// #include <GL/gl.h>
-// #include "SpoutGL/Spout.h"
-// #endif
-// #include <iostream>
-// #endif
+#ifndef _WIN32
 
-// SpoutSenderWrapper::SpoutSenderWrapper() {
-// #if !defined(WIN32) || !(defined(USE_SPOUT_DX) || defined(USE_SPOUT_DX12) || defined(USE_SPOUT_DX9) || defined(USE_SPOUT_GL))
-//     std::cout << "Not able to create Spout sender: not Windows or no Spout backend enabled.\n";
-// #endif
-// }
+void spoutAfterRenderTick(IDataBus*, void*, int, int) {}
+void spoutNotifyEngineDeviceReset() {}
 
-// SpoutSenderWrapper::~SpoutSenderWrapper()
-// {
-// #if defined(WIN32) && (defined(USE_SPOUT_DX) || defined(USE_SPOUT_DX12) || defined(USE_SPOUT_DX9) || defined(USE_SPOUT_GL))
-//     shutdown();
-// #endif
-// }
+#else
 
-// #if defined(WIN32) && (defined(USE_SPOUT_DX) || defined(USE_SPOUT_DX12) || defined(USE_SPOUT_DX9) || defined(USE_SPOUT_GL))
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 
-// bool SpoutSenderWrapper::init(ID3D11Device* device, HWND hwnd,
-//                               int w,
-//                               int h,
-//                               const std::string& name)
-// {
-//     if (!hwnd) {
-//         std::cerr << "SPOUT: Bad HWND.\n";
-//         return false;
-//     }
+#include "databus.h"
+#include <d3d11.h>
+#include <iostream>
 
-//     this->hwnd = hwnd;
-//     width = w;
-//     height = h;
+#if defined(__has_include)
+#if __has_include("SpoutDX/SpoutDX.h")
+#define SPOUT_IMPL_DX11 1
+#include "SpoutDX/SpoutDX.h"
+#endif
+#endif
 
-//     sender.OpenDirectX11(device);
-//     sender.SelectSender(this->hwnd);
-//     sender.SetSenderName("RCubiQWSender");
+#ifdef SPOUT_IMPL_DX11
 
-//     initialized = true;
-//     return true;
-// }
+namespace {
 
-// void SpoutSenderWrapper::send(ID3D11Texture2D* texture)
-// {
-//     if (!initialized || !texture || !hwnd) {
-//         return;
-//     }
+constexpr const char kSenderName[] = "RCubiQWSender";
 
-//     if (!sender.SendTexture(texture)) {
-//         std::cerr << "SpoutSenderWrapper: Failed to send texture.\n";
-//     }
-// }
+struct SpoutState {
+    spoutDX sender{};
+    HWND hwnd{};
+    uintptr_t boundDevice = 0;
+    bool ready = false;
 
-// void SpoutSenderWrapper::shutdown()
-// {
-//     if (initialized) {
-//         sender.ReleaseSender();
+    void shutdown()
+    {
+        if (!ready)
+            return;
+        sender.ReleaseSender();
+        boundDevice = 0;
+        ready = false;
+    }
 
-//         initialized = false;
-//         device = nullptr;
-//         width = 0;
-//         height = 0;
-//     }
-// }
+    ID3D11Device* acquireDevice(ID3D11Texture2D* tex) const
+    {
+        ID3D11Device* dev = nullptr;
+        if (!tex)
+            return nullptr;
+        tex->GetDevice(&dev);
+        return dev;
+    }
 
-// #endif // WIN32 && SPOUT_BACKENDS
+    bool rebindTo(ID3D11Texture2D* tex, HWND hwndIn)
+    {
+        hwnd = hwndIn;
+        if (!hwnd || !tex)
+            return false;
+
+        ID3D11Device* dev = acquireDevice(tex);
+        if (!dev)
+            return false;
+        const uintptr_t devAddr = reinterpret_cast<uintptr_t>(static_cast<void*>(dev));
+        dev->Release();
+
+        shutdown();
+
+        dev = acquireDevice(tex);
+        if (!dev)
+            return false;
+
+        sender.OpenDirectX11(dev);
+        dev->Release();
+
+        sender.SelectSender(hwnd);
+        sender.SetSenderName(kSenderName);
+
+        boundDevice = devAddr;
+        ready = true;
+        return true;
+    }
+
+    bool ensureBound(ID3D11Texture2D* tex, HWND hwndIn)
+    {
+        hwnd = hwndIn;
+        if (!hwnd || !tex)
+            return false;
+
+        ID3D11Device* dev = acquireDevice(tex);
+        if (!dev)
+            return false;
+        const uintptr_t devAddr = reinterpret_cast<uintptr_t>(static_cast<void*>(dev));
+        dev->Release();
+
+        if (ready && boundDevice == devAddr)
+            return true;
+
+        return rebindTo(tex, hwndIn);
+    }
+
+    bool send(ID3D11Texture2D* tex, HWND hwndIn)
+    {
+        if (!ensureBound(tex, hwndIn))
+            return false;
+
+        if (sender.SendTexture(tex))
+            return true;
+
+        std::cerr << "SpoutSenderWrapper: Failed to send texture.\n";
+        shutdown();
+        if (!rebindTo(tex, hwndIn))
+            return false;
+        return sender.SendTexture(tex);
+    }
+};
+
+SpoutState g_spout;
+
+} // namespace
+
+void spoutNotifyEngineDeviceReset()
+{
+    g_spout.shutdown();
+}
+
+void spoutAfterRenderTick(IDataBus* bus, void* hostHwnd, int viewportW, int viewportH)
+{
+    (void)viewportW;
+    (void)viewportH;
+    if (!bus || !hostHwnd)
+        return;
+
+    auto* hf = bus_handle_cast<std::deque<void*>>(bus, "frames_buffer");
+    if (!hf || !hf->hasLive())
+        return;
+
+    auto& dq = **hf;
+    if (dq.empty())
+        return;
+
+    void* p = dq.back();
+    if (!p)
+        return;
+
+    auto* tex = reinterpret_cast<ID3D11Texture2D*>(p);
+    g_spout.send(tex, reinterpret_cast<HWND>(hostHwnd));
+}
+
+#else // no SpoutDX/SpoutDX.h — проект без SDK
+
+void spoutNotifyEngineDeviceReset() {}
+
+void spoutAfterRenderTick(IDataBus*, void*, int, int) {}
+
+#endif
+
+#endif // _WIN32

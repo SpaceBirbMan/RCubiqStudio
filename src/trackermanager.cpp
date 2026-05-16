@@ -32,7 +32,7 @@ TrackerManager::~TrackerManager() {
 }
 
 void TrackerManager::onStopTracker() {
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsInvalidate, 0));
     for (auto& [path, data] : trackers) {
         if (!data.instance) continue;
         if (data.instance->isRunning()) data.instance->stop();
@@ -53,9 +53,15 @@ nlohmann::json TrackerManager::serializeCache() const {
 }
 
 void TrackerManager::deserializeCache(const nlohmann::json& data) {
-    trackersRegistry = data["trackersRegistry"];
-    if (data.contains("activeTrackerPaths"))
-        activeTrackerPaths = data["activeTrackerPaths"];
+    if (data.contains("trackersRegistry") && data["trackersRegistry"].is_array())
+        trackersRegistry = data["trackersRegistry"].get<std::set<std::string>>();
+    else
+        trackersRegistry.clear();
+
+    if (data.contains("activeTrackerPaths") && data["activeTrackerPaths"].is_array())
+        activeTrackerPaths = data["activeTrackerPaths"].get<std::set<std::string>>();
+    else
+        activeTrackerPaths.clear();
 }
 
 void TrackerManager::initialize() {
@@ -140,7 +146,7 @@ void TrackerManager::activateTrackerByPath(std::string path) {
         if (!it->second.instance->isRunning()) {
             it->second.instance->start();
             core->getEventManager().sendMessage(AppMessage(name, "send_table", it->second.instance->getTable()));
-            core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
+            core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsRestore, 0));
             core->getEventManager().sendMessage(AppMessage(name, "tracker_set_active", path));
         }
         return;
@@ -164,8 +170,10 @@ void TrackerManager::deactivateTrackerByPath(std::string path) {
         return;
     }
 
+    core->persistPluginsAndWriteSessionCache(path);
+
     // То же, что remove_tracker (остановка, shutdown, выгрузка DLL, снятие вкладок), но строка в toolbox и trackersRegistry остаются.
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsInvalidate, 0));
 
     if (it->second.instance->isRunning())
         it->second.instance->stop();
@@ -178,7 +186,7 @@ void TrackerManager::deactivateTrackerByPath(std::string path) {
     trackers.erase(it);
 
     activeTrackerPaths.erase(path);
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kPluginRuntimeTeardown, path));
     core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
     core->getEventManager().sendMessage(AppMessage(name, "tracker_set_inactive", path));
 }
@@ -189,7 +197,9 @@ void TrackerManager::removeTracker(std::string path) {
         return;
     }
 
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+    core->persistPluginsAndWriteSessionCache(path);
+
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsInvalidate, 0));
 
     auto it = trackers.find(path);
     if (it != trackers.end()) {
@@ -254,7 +264,7 @@ void TrackerManager::activateTracker(std::vector<void*> pointers) {
     tracker->setLibraryPath(resolvedPath);
     tracker->start();
     core->getEventManager().sendMessage(AppMessage(name, "send_table", tracker->getTable()));
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsRestore, 0));
     core->getEventManager().sendMessage(AppMessage(name, "tracker_set_active", resolvedPath));
     std::cout << "[TrackerManager] Tracker activated: " << resolvedPath << std::endl;
 }
@@ -268,5 +278,5 @@ void TrackerManager::resendTrackerTables() {
         }
     }
     if (any)
-        core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
+        core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsRestore, 0));
 }

@@ -13,6 +13,9 @@
 #include <QCheckBox>
 #include <unordered_map>
 #include <memory>
+
+class QCloseEvent;
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
@@ -22,6 +25,7 @@ QT_END_NAMESPACE
 class TrackerRenderer;
 class RcqVirtualCamera;
 class ObsVirtualCamera;
+struct KeyboardKeysState;
 
 // Info stored per toolbox page
 struct PluginPageEntry {
@@ -40,6 +44,8 @@ public:
 
 protected:
     void changeEvent(QEvent* event) override;
+    void closeEvent(QCloseEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     Ui::MainWindow *ui;
@@ -57,8 +63,10 @@ private:
     /** Stream viewport to OBS Virtual Camera (DirectShow, shared memory NV12). */
     std::unique_ptr<ObsVirtualCamera> m_obsVirtualCam;
 
-    // Plugin toolbox + динамические вкладки: путь DLL → вкладки с property m3_plugin_library_path
+    // Plugin toolbox + динамические вкладки: путь DLL → вкладки с property plugin_library_path
     std::unordered_map<std::string, PluginPageEntry> pluginPageEntries;
+    /// Состояние клавиатуры на шине (`keyboard_state`); обновляется глобальным event filter.
+    std::shared_ptr<KeyboardKeysState> keyboardState_;
     /// Последний движок, отрисованный во вкладках слева (для смены активного без снятия панелей чужих путей).
     std::string lastRenderedEngineLibraryPath;
     // For engine checkbox exclusivity
@@ -84,6 +92,9 @@ private:
     void uiRemovePluginEntry(std::string path);
     void uiSetPluginActive(std::string path);
     void uiSetPluginInactive(std::string path);
+
+    /// Find toolbox entry when notify path differs from UI key (e.g. Windows case / relative vs absolute).
+    std::unordered_map<std::string, PluginPageEntry>::iterator findPluginPageEntryIt(const std::string& path);
     void uiSetPluginName(std::string path, std::string pluginName);
 
     // Adding dialogs helpers
@@ -91,6 +102,9 @@ private:
     void addTrackerPlugin();
     void addGenPlugin();
     void setupViewMenuDockToggles();
+    void applyDefaultDockLayout();
+    void restorePersistedUiLayout();
+    void savePersistedUiLayout();
 
     QTimer* _updateTimer;
     std::unordered_map<std::string, std::shared_ptr<void>> *_trackerTableCache;
@@ -108,5 +122,7 @@ private slots:
     void reloadAllPlugins();
 
     void updateResourceLabels();
+    void openPreferences();
+    void resetUiLayoutToDefaults();
 };
 #endif // MAINWINDOW_H

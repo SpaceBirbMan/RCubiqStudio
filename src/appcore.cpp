@@ -1,7 +1,10 @@
 #include "appcore.h"
+#include "appsettings.h"
 #include "eventmanager.h"
 #include "bushandle.h"
+#include "misc.h"
 #include <deque>
+#include <memory>
 #include <string>
 
 /// Каналы «живые указатели от плагина / дефолт на шине» — создаются один раз при старте хоста.
@@ -39,6 +42,10 @@ AppCore::AppCore() : eventManager() {
     this->eventManager.getBusPtr()->registerData("trakers_gui_pages", std::unordered_map<std::string, RUI::UiPage> {});
 
     ensureEngineLivePublishChannels(this->eventManager.getBusPtr());
+
+    this->eventManager.getBusPtr()->registerData(
+        "keyboard_state", std::make_shared<KeyboardKeysState>());
+    AppSettings::applyRenderAdapterToDataBus(this->eventManager.getBusPtr());
 
     crashHandler = std::make_unique<CrashHandler>(eventManager);
     crashHandler->install();
@@ -80,4 +87,15 @@ void AppCore::sendDataBusE() {
 
 void AppCore::sendDataBusP() {
     this->eventManager.sendMessage(AppMessage(name, "send_dbus_p", this->eventManager.getBusPtr()));
+}
+
+void AppCore::setPersistPipeline(std::function<void(const std::string&)> fn)
+{
+    persistPipeline_ = std::move(fn);
+}
+
+void AppCore::persistPluginsAndWriteSessionCache(const std::string& dllPathHint)
+{
+    if (persistPipeline_)
+        persistPipeline_(dllPathHint);
 }

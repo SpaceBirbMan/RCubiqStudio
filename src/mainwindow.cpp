@@ -1,12 +1,15 @@
 #include "consts.h"
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
+#include "misc.h"
+#include "appsettings.h"
 #include <QQuickView>
 #include <QTableWidget>
 #include <QHeaderView>
 #include "viewportwidget.h"
 // #include "rcqvirtualcamera.h"
 #include "obsvirtualcamera.h"
+#include "settingsdialog.h"
 #include "uirenderer.h"
 #include "trackerrenderer.h"
 #include <QDebug>
@@ -25,9 +28,15 @@
 #include <QDockWidget>
 #include <QDir>
 #include <QFileInfo>
+#include <QSettings>
+#include <QCloseEvent>
+#include <QKeyEvent>
+#include <QGuiApplication>
+#include <QApplication>
 #include <any>
 #include <atomic>
 #include <algorithm>
+#include <mutex>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -64,7 +73,7 @@ bool subtreeHasPluginPath(QWidget* root, const QString& needlePath)
 {
     if (!root)
         return false;
-    const QVariant v = root->property("m3_plugin_library_path");
+    const QVariant v = root->property("plugin_library_path");
     if (v.isValid() && pluginPathsMatch(v.toString(), needlePath))
         return true;
     for (QObject* ch : root->children()) {
@@ -92,29 +101,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     ui->dockWidgetViewport->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     ui->dockWidget_3->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
-    // Horizontal dock widths must scale with *window width*. Using height() here made tall
-    // windows assign huge side dock widths and the right panel could not be narrowed.
-    int winW = width();
-    if (winW < 200)
-        winW = geometry().width() > 200 ? geometry().width() : 1000;
-
-    const int sideSize = (std::max)(140, static_cast<int>(winW * 0.18));
-    const int centerSize = (std::max)(280, winW - 2 * sideSize);
-
-    QList<QDockWidget*> docks = {ui->dockWidget, ui->dockWidgetViewport, ui->dockWidget_3};
-    resizeDocks(docks, {sideSize, centerSize, sideSize}, Qt::Horizontal);
-
-    ui->dockWidget->setMinimumWidth(120);
-    ui->dockWidgetViewport->setMinimumWidth(200);
-    ui->dockWidget_3->setMinimumWidth(120);
-
-    ui->rightPanel->setMinimumWidth(0);
-    if (ui->scrollAreaWidgetContents)
-        ui->scrollAreaWidgetContents->setMinimumWidth(0);
-    if (ui->scrollAreaWidgetContents_2)
-        ui->scrollAreaWidgetContents_2->setMinimumWidth(0);
-    if (ui->scrollAreaWidgetContents_3)
-        ui->scrollAreaWidgetContents_3->setMinimumWidth(0);
+    applyDefaultDockLayout();
 
     _updateTimer = nullptr;
     _trackerTableCache = nullptr;
@@ -136,7 +123,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     core->getEventManager().subscribe(name, "tracker_ui_removed",   &MainWindow::uiRemovePluginEntry, this);
     core->getEventManager().subscribe(name, "gen_plugin_ui_removed",&MainWindow::uiRemovePluginEntry, this);
 
-    core->getEventManager().subscribe(name, M3Events::kPluginRuntimeTeardown, &MainWindow::uiTeardownPluginTabs, this);
+    core->getEventManager().subscribe(name, AppLifecycleEvents::kPluginRuntimeTeardown, &MainWindow::uiTeardownPluginTabs, this);
 
     // Active state restore signals
     core->getEventManager().subscribe(name, "engine_set_active",       &MainWindow::uiSetPluginActive, this);
@@ -150,6 +137,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     connect(ui->newSetupMenuButton,    &QAction::triggered,  this, &MainWindow::onNewFileClicked);
     connect(ui->saveAsSetupMenuButton,   &QAction::triggered,  this, &MainWindow::onSaveFileClicked);
     connect(ui->action_Render_API,    &QAction::triggered,  this, &MainWindow::setRenderApi);
+    connect(ui->actionPreferences, &QAction::triggered, this, &MainWindow::openPreferences);
     connect(ui->addPlugin,            &QPushButton::clicked, this, &MainWindow::addPlugin);
     connect(ui->deletePlugin,         &QPushButton::clicked, this, &MainWindow::removePlugin);
     connect(ui->reloadPlugin,         &QPushButton::clicked, this, &MainWindow::reloadPlugin);
@@ -180,19 +168,34 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     //     m_rcqVirtualCam.reset();
     // }
 
-    // --- OBS Virtual Camera (DirectShow, shared memory, no extra DLL needed) ---
-    m_obsVirtualCam = std::make_unique<ObsVirtualCamera>();
-    if (m_obsVirtualCam->startStream(640, 480, 30)) {
-        vw->setAfterFrameCallback([this, vw]() {
-            if (m_obsVirtualCam && m_obsVirtualCam->isStreaming()) {
-                m_obsVirtualCam->pushFrameFromWidget(vw);
-            }
-        });
+    // --- OBS Virtual Camera — только если явно включено в настройках (иначе лишняя память/shm). ---
+    if (AppSettings::startVirtualCameraBridgeAtStartup()) {
+        m_obsVirtualCam = std::make_unique<ObsVirtualCamera>();
+        if (m_obsVirtualCam->startStream(640, 480, 30)) {
+            vw->setAfterFrameCallback([this, vw]() {
+                if (m_obsVirtualCam && m_obsVirtualCam->isStreaming()) {
+                    m_obsVirtualCam->pushFrameFromWidget(vw);
+                }
+            });
+        } else {
+            m_obsVirtualCam.reset();
+        }
     } else {
         m_obsVirtualCam.reset();
     }
 
+    restorePersistedUiLayout();
     setupViewMenuDockToggles();
+    connect(ui->actionViewResetLayout, &QAction::triggered, this, &MainWindow::resetUiLayoutToDefaults);
+
+    try {
+        auto& kbAny = core->getEventManager().getBusPtr()->getData("keyboard_state");
+        keyboardState_ = std::any_cast<std::shared_ptr<KeyboardKeysState>>(kbAny);
+    } catch (...) {
+        keyboardState_.reset();
+    }
+    if (auto* qa = qobject_cast<QApplication*>(QCoreApplication::instance()))
+        qa->installEventFilter(this);
 
     ui->gpu_label->setVisible(false);
     auto* resTimer = new QTimer(this);
@@ -219,6 +222,72 @@ void MainWindow::setupViewMenuDockToggles()
     bind(ui->dockWidget, ui->actionViewDockEngine);
     bind(ui->dockWidgetViewport, ui->actionViewDockViewport);
     bind(ui->dockWidget_3, ui->actionViewDockPlugins);
+}
+
+void MainWindow::applyDefaultDockLayout()
+{
+    // Horizontal dock widths must scale with *window width*. Using height() here made tall
+    // windows assign huge side dock widths and the right panel could not be narrowed.
+    int winW = width();
+    if (winW < 200)
+        winW = geometry().width() > 200 ? geometry().width() : 1000;
+
+    const int sideSize = (std::max)(140, static_cast<int>(winW * 0.18));
+    const int centerSize = (std::max)(280, winW - 2 * sideSize);
+
+    QList<QDockWidget*> docks = {ui->dockWidget, ui->dockWidgetViewport, ui->dockWidget_3};
+    resizeDocks(docks, {sideSize, centerSize, sideSize}, Qt::Horizontal);
+
+    ui->dockWidget->setMinimumWidth(120);
+    ui->dockWidgetViewport->setMinimumWidth(200);
+    ui->dockWidget_3->setMinimumWidth(120);
+
+    ui->rightPanel->setMinimumWidth(0);
+    if (ui->scrollAreaWidgetContents)
+        ui->scrollAreaWidgetContents->setMinimumWidth(0);
+    // if (ui->scrollAreaWidgetContents_2)
+    //     ui->scrollAreaWidgetContents_2->setMinimumWidth(0);
+    if (ui->scrollAreaWidgetContents_3)
+        ui->scrollAreaWidgetContents_3->setMinimumWidth(0);
+}
+
+void MainWindow::restorePersistedUiLayout()
+{
+    AppSettings::installAppMetadata();
+    QSettings st;
+    const QByteArray geom = st.value(QLatin1String("ui/main_geometry")).toByteArray();
+    const QByteArray winState = st.value(QLatin1String("ui/main_window_state")).toByteArray();
+    if (!geom.isEmpty())
+        restoreGeometry(geom);
+    if (!winState.isEmpty())
+        restoreState(winState);
+}
+
+void MainWindow::savePersistedUiLayout()
+{
+    AppSettings::installAppMetadata();
+    QSettings st;
+    st.setValue(QLatin1String("ui/main_geometry"), saveGeometry());
+    st.setValue(QLatin1String("ui/main_window_state"), saveState());
+    st.sync();
+}
+
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    savePersistedUiLayout();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::resetUiLayoutToDefaults()
+{
+    QSettings st;
+    st.remove(QLatin1String("ui/main_geometry"));
+    st.remove(QLatin1String("ui/main_window_state"));
+    st.sync();
+    applyDefaultDockLayout();
+    ui->dockWidget->setVisible(true);
+    ui->dockWidgetViewport->setVisible(true);
+    ui->dockWidget_3->setVisible(true);
 }
 
 void MainWindow::changeEvent(QEvent* event)
@@ -269,6 +338,8 @@ void MainWindow::uiTeardownPluginTabs(std::string path)
 
 MainWindow::~MainWindow()
 {
+    if (auto* qa = qobject_cast<QApplication*>(QCoreApplication::instance()))
+        qa->removeEventFilter(this);
     // m_rcqVirtualCam.reset();
     m_obsVirtualCam.reset();
     if (currentCamera) {
@@ -277,11 +348,60 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    (void)watched;
+    if (keyboardState_ && event) {
+        if (event->type() == QEvent::KeyPress) {
+            auto* ke = static_cast<QKeyEvent*>(event);
+            if (!ke->isAutoRepeat()) {
+                std::lock_guard<std::mutex> lk(keyboardState_->mutex);
+                const int qtKey = ke->key();
+                if (qtKey != 0 && qtKey != Qt::Key_unknown)
+                    keyboardState_->keysHeldQt.insert(qtKey);
+#ifdef _WIN32
+                const unsigned vk = static_cast<unsigned>(ke->nativeVirtualKey());
+                if (vk != 0)
+                    keyboardState_->keysHeldNative.insert(static_cast<int>(vk));
+#endif
+            }
+        } else if (event->type() == QEvent::KeyRelease) {
+            auto* ke = static_cast<QKeyEvent*>(event);
+            if (!ke->isAutoRepeat()) {
+                std::lock_guard<std::mutex> lk(keyboardState_->mutex);
+                const int qtKey = ke->key();
+                keyboardState_->keysHeldQt.erase(qtKey);
+#ifdef _WIN32
+                const unsigned vk = static_cast<unsigned>(ke->nativeVirtualKey());
+                if (vk != 0)
+                    keyboardState_->keysHeldNative.erase(static_cast<int>(vk));
+#endif
+            }
+        }
+    }
+    return false;
+}
+
 void MainWindow::initialize() {
-    core->getEventManager().sendMessage(AppMessage(name, "get_video_devices_request", 0));
+    if (AppSettings::enumerateVideoInputsAtStartup())
+        core->getEventManager().sendMessage(AppMessage(name, "get_video_devices_request", 0));
 }
 
 // ─── Plugin management ────────────────────────────────────────────────────────
+
+std::unordered_map<std::string, PluginPageEntry>::iterator
+MainWindow::findPluginPageEntryIt(const std::string& path)
+{
+    auto it = pluginPageEntries.find(path);
+    if (it != pluginPageEntries.end())
+        return it;
+    const QString needle = QString::fromStdString(path);
+    for (it = pluginPageEntries.begin(); it != pluginPageEntries.end(); ++it) {
+        if (pluginPathsMatch(QString::fromStdString(it->first), needle))
+            return it;
+    }
+    return pluginPageEntries.end();
+}
 
 void MainWindow::addPlugin() {
     QMenu menu(this);
@@ -381,8 +501,8 @@ void MainWindow::uiAddPluginEntry(PluginUIInfo info) {
         return;
     }
 
-    // Duplicate protection
-    if (pluginPageEntries.count(info.path)) {
+    // Duplicate protection (path may differ by case / normalization from core)
+    if (findPluginPageEntryIt(info.path) != pluginPageEntries.end()) {
         qDebug() << "[UI] Duplicate plugin page skipped:" << QString::fromStdString(info.path);
         return;
     }
@@ -499,7 +619,7 @@ void MainWindow::uiSetPluginActive(std::string path) {
         QMetaObject::invokeMethod(this, [this, path]() { uiSetPluginActive(path); }, Qt::QueuedConnection);
         return;
     }
-    auto it = pluginPageEntries.find(path);
+    auto it = findPluginPageEntryIt(path);
     if (it == pluginPageEntries.end()) return;
     QCheckBox* cb = it->second.checkBox;
     if (!cb) return;
@@ -523,7 +643,7 @@ void MainWindow::uiSetPluginInactive(std::string path) {
         QMetaObject::invokeMethod(this, [this, path]() { uiSetPluginInactive(path); }, Qt::QueuedConnection);
         return;
     }
-    auto it = pluginPageEntries.find(path);
+    auto it = findPluginPageEntryIt(path);
     if (it == pluginPageEntries.end()) return;
     QCheckBox* cb = it->second.checkBox;
     if (!cb) return;
@@ -596,26 +716,27 @@ void MainWindow::uiRemovePluginEntry(std::string path) {
         return;
     }
 
-    auto it = pluginPageEntries.find(path);
+    auto it = findPluginPageEntryIt(path);
     if (it == pluginPageEntries.end()) {
         qDebug() << "[UI] uiRemovePluginEntry: path not found:" << QString::fromStdString(path);
         return;
     }
 
+    const std::string storedPath = it->first;
     const PluginPageEntry& entry = it->second;
 
     switch (entry.type) {
     case PluginUIType::Engine:
-        removeTabsOwnedByLibraryPath(ui->leftPanel, path);
-        if (lastRenderedEngineLibraryPath == path)
+        removeTabsOwnedByLibraryPath(ui->leftPanel, storedPath);
+        if (lastRenderedEngineLibraryPath == storedPath)
             lastRenderedEngineLibraryPath.clear();
         break;
     case PluginUIType::Tracker:
-        removeTabsOwnedByLibraryPath(ui->rightPanel, path);
+        removeTabsOwnedByLibraryPath(ui->rightPanel, storedPath);
         break;
     case PluginUIType::Generic:
-        removeTabsOwnedByLibraryPath(ui->leftPanel, path);
-        removeTabsOwnedByLibraryPath(ui->rightPanel, path);
+        removeTabsOwnedByLibraryPath(ui->leftPanel, storedPath);
+        removeTabsOwnedByLibraryPath(ui->rightPanel, storedPath);
         break;
     default:
         break;
@@ -634,7 +755,7 @@ void MainWindow::uiRemovePluginEntry(std::string path) {
         QWidget* w = ui->pluginsToolBox->widget(i);
         if (w) {
             QString propPath = w->property("pluginPath").toString();
-            if (propPath.toStdString() == path) {
+            if (pluginPathsMatch(propPath, QString::fromStdString(path))) {
                 ui->pluginsToolBox->removeItem(i);
                 delete w;
                 break;
@@ -786,6 +907,9 @@ void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> t
 void MainWindow::initDynamicUi(PluginUiEngineTrees submission) {
     if (!submission.pages)
         return;
+    // BlockingQueuedConnection: build tabs while the engine DLL is still mapped.
+    // QueuedConnection allowed deactivate/unload to run before this lambda executed,
+    // leaving UiRenderer callbacks pointing at freed DLL memory (SIGSEGV).
     QMetaObject::invokeMethod(this,
         [this, submission = std::move(submission)]() mutable {
             if (!submission.pages)
@@ -801,7 +925,7 @@ void MainWindow::initDynamicUi(PluginUiEngineTrees submission) {
                 auto root = std::make_shared<RUI::UiPage>((*submission.pages)[i]);
                 UiRenderer::renderToTabWidget(root, ui->leftPanel, pathTag);
             }
-        }, Qt::QueuedConnection);
+        }, Qt::BlockingQueuedConnection);
 }
 
 void MainWindow::updateResourceLabels()
@@ -858,13 +982,22 @@ void MainWindow::updateResourceLabels()
 #endif
 
     try {
+        if (!AppSettings::showGpuFrameLoadInStatusBar()) {
+            ui->gpu_label->setVisible(false);
+        } else {
         IDataBus* bus = core->getEventManager().getBusPtr();
         if (auto* ch = bus_handle_cast_derived<AtomicFloatLiveChannel>(bus, "engine_gpu_load")) {
-            const float v = ch->load_relaxed();
-            ui->gpu_label->setText(tr("GPU: %1%").arg(QString::number(int(v + 0.5f))));
+            const float raw = ch->load_relaxed();
+            float pct = raw;
+            if (pct >= 0.f && pct <= 1.0001f)
+                pct *= 100.f;
+            pct = (std::min)(pct, 999.f);
+            pct = (std::max)(pct, 0.f);
+            ui->gpu_label->setText(tr("GPU: %1%").arg(QString::number(int(pct + 0.5f))));
             ui->gpu_label->setVisible(true);
         } else {
             ui->gpu_label->setVisible(false);
+        }
         }
     } catch (...) {
         ui->gpu_label->setVisible(false);
@@ -886,13 +1019,19 @@ void MainWindow::initTrackerDynamicUi(PluginUiTrackerTrees submission) {
                                               ui->rightPanel,
                                               pathTag);
             }
-        }, Qt::QueuedConnection);
+        }, Qt::BlockingQueuedConnection);
 }
 
 void MainWindow::connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr) {}
 
 void MainWindow::showCacheErrorMessage() {
     std::cout << "Cache doesn't exist" << std::endl;
+}
+
+void MainWindow::openPreferences()
+{
+    SettingsDialog dlg(this, core);
+    dlg.exec();
 }
 
 void MainWindow::setRenderApi() {

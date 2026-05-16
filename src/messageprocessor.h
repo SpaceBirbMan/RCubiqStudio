@@ -5,6 +5,9 @@
 #include <condition_variable>
 #include <mutex>
 #include <atomic>
+#include <functional>
+#include <vector>
+#include <string>
 #include "misc.h"
 
 class EventQueue; // решение циклической зависимости
@@ -12,8 +15,10 @@ class EventQueue; // решение циклической зависимост�
 class MessageProcessor
 {
 public:
-    explicit MessageProcessor(EventQueue& q, /*std::unordered_map<std::string, std::function<void(const std::any&)>>& s,*/ std::vector<subStruct>& v)
-        :qPtr(q), stopFlag(false), /*subsTable(s),*/ subsVector(v)
+    explicit MessageProcessor(EventQueue& q, std::function<std::vector<subStruct>(const std::string&)> subscriberLookupByTopic)
+        : qPtr(q)
+        , stopFlag(false)
+        , getSubscribersSnapshot(std::move(subscriberLookupByTopic))
     {
         proc_thread = std::thread(&MessageProcessor::process, this);
     }
@@ -33,18 +38,28 @@ public:
         cv.notify_one();
     }
 
-    /// True while dispatching callbacks for one message (worker thread).
-    bool isDispatching() const { return dispatching.load(std::memory_order_acquire); }
+    /// Учитывать синхронные вызовы коллбеков вне очереди (см. EventManager::dispatchImmediately).
+    void enterDispatchContext() {
+        dispatchDepth.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    void leaveDispatchContext() {
+        dispatchDepth.fetch_sub(1, std::memory_order_acq_rel);
+    }
+
+    /// True while dispatching callbacks (including nested synchronous dispatches).
+    bool isDispatching() const {
+        return dispatchDepth.load(std::memory_order_acquire) > 0;
+    }
 
 private:
     std::thread proc_thread;
     std::mutex mut;
     std::condition_variable cv;
     std::atomic<bool> stopFlag;
-    std::atomic<bool> dispatching{false};
+    std::atomic<int> dispatchDepth{0};
     EventQueue& qPtr;
-    //std::unordered_map<std::string, std::function<void(const std::any&)>>& subsTable;
-    std::vector<subStruct>& subsVector;
+    std::function<std::vector<subStruct>(const std::string&)> getSubscribersSnapshot;
 
     void process();
 

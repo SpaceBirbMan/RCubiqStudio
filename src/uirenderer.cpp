@@ -427,8 +427,11 @@ QWidget* UiRenderer::renderImageBox(UiImageBox* imgBox) {
             btn->window(), "Select Image", "",
             "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp)");
 
-        if (!filePath.isEmpty()) {
-            std::string path = filePath.toStdString();
+        if (filePath.isEmpty())
+            return;
+        const std::string path = filePath.toStdString();
+        // Выйти из вложенного event loop QFileDialog до тяжёлой работы / колбэков в DLL (bgfx, D3D).
+        QTimer::singleShot(0, btn, [btn, imgBox, updateButton, path]() {
             imgBox->setImage(path);
 
             int width, height, channels;
@@ -452,7 +455,7 @@ QWidget* UiRenderer::renderImageBox(UiImageBox* imgBox) {
             auto imgData = std::make_shared<ImageData>(pixels, static_cast<uint16_t>(width), static_cast<uint16_t>(height), 4);
             imgBox->setImageData(imgData);
             updateButton();
-        }
+        });
     });
 
     return btn;
@@ -784,9 +787,15 @@ QWidget* UiRenderer::renderFileDialog(UiFileDialog* fd) {
     auto btn = new QPushButton(QString::fromStdString(fd->title));
     QObject::connect(btn, &QPushButton::clicked, [btn, fd]() {
         QString file = QFileDialog::getOpenFileName(btn, QString::fromStdString(fd->title), "", QString::fromStdString(fd->filter));
-        if (!file.isEmpty() && fd->onFileSelected) {
-            fd->onFileSelected(file.toStdString());
-        }
+        if (file.isEmpty() || !fd->onFileSelected)
+            return;
+        const std::string path = file.toStdString();
+        // Не вызывать колбэк плагина (loadModel / bgfx::init) из exec() файлового диалога —
+        // вложенный event loop ломается с RenderDoc/COM и инициализацией GPU.
+        QTimer::singleShot(0, btn, [fd, path]() {
+            if (fd->onFileSelected)
+                fd->onFileSelected(path);
+        });
     });
     QPointer<QPushButton> bPtr = btn;
     fd->onChange = [bPtr, fd]() { if(bPtr) bPtr->setText(QString::fromStdString(fd->title)); };
@@ -814,7 +823,7 @@ QWidget* UiRenderer::renderColorPicker(UiColorPicker* cp) {
     hlay->setContentsMargins(0, 0, 0, 0);
     auto*    swatch = new QFrame(wrap);
     auto*    btn    = new QPushButton(QString::fromStdString(cp->buttonText), wrap);
-    const auto kSwatchName = QStringLiteral("M3UiColorSwatch");
+    const auto kSwatchName = QStringLiteral("UiColorSwatch");
     swatch->setObjectName(kSwatchName);
     swatch->setFrameShape(QFrame::StyledPanel);
     swatch->setFixedSize(44, 24);
@@ -1029,7 +1038,7 @@ void UiRenderer::renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tab
         const int idx = tabTarget->count();
         tabTarget->insertTab(idx, content, QString::fromStdString(root->getTitle()));
         if (!pluginLibraryPath.empty())
-            content->setProperty("m3_plugin_library_path", QString::fromStdString(pluginLibraryPath));
+            content->setProperty("plugin_library_path", QString::fromStdString(pluginLibraryPath));
     }
 }
 

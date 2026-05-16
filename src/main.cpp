@@ -6,20 +6,18 @@
 #include "trackermanager.h"
 #include "otherplugins.h"
 
+#include "appsettings.h"
+
 #include <QApplication>
-#include <QCoreApplication>
-#include <QLocale>
-#include <QTranslator>
-#include <QSplashScreen>
-#include <QThread>
 #include <chrono>
 
-#include <QApplication>
-#include <QQuickView>
+#ifdef QML
 #include <QQmlEngine>
+#include <QQuickView>
+#endif
 
 // todo: Метод, просящий модуль подписаться на определённое событие (можно ввести уровни доверия, чтобы нельзя было втыкать опасные методы)
-// Вспомогательная функция для корректного завершения: сначала трекеры, потом кэш; ждём обработку очереди.
+// Вспомогательная функция для корректного завершения: сначала трекеры, затем сохранить сессию без ожидания отчётов модулей.
 void sendSaveCacheMessage(AppCore *core)
 {
     if (!core)
@@ -28,8 +26,7 @@ void sendSaveCacheMessage(AppCore *core)
     constexpr auto kPhaseWait = std::chrono::seconds(15);
     em.sendMessage(AppMessage("main", "stop_tracker", 0));
     em.waitUntilQuiet(kPhaseWait);
-    em.sendMessage(AppMessage("main", "save_cache", 0));
-    em.waitUntilQuiet(kPhaseWait);
+    core->persistPluginsAndWriteSessionCache({});
 }
 
 int main(int argc, char *argv[])
@@ -37,19 +34,7 @@ int main(int argc, char *argv[])
 
     QApplication a(argc, argv);
 
-    QTranslator translator;
-    const QStringList uiLanguages = QLocale::system().uiLanguages();
-    for (const QString& locale : uiLanguages) {
-        const QString baseName = QLatin1String("M3_") + QLocale(locale).name();
-        const QString appDir = QCoreApplication::applicationDirPath();
-        if (translator.load(baseName, appDir + QLatin1String("/i18n"))
-            || translator.load(appDir + QLatin1Char('/') + baseName + QLatin1String(".qm"))
-            || translator.load(QLatin1String(":/i18n/") + baseName)) {
-            a.installTranslator(&translator);
-            break;
-        }
-    }
-
+    AppSettings::bootstrap(a);
     // QPixmap pixmap(":/splash.png");
     // QSplashScreen splash(pixmap);
     // splash.show();

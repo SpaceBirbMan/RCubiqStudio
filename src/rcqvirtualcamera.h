@@ -11,7 +11,7 @@ class QWidget;
 /**
  * Pushes RGB24 frames to akvirtualcamera via vcam C API (libvcam_capi.dll).
  * Register a device with id and description first (e.g. AkVCamManager), keep
- * AkVCamAssistant running, place libvcam_capi.dll next to M3.exe.
+ * AkVCamAssistant running, place libvcam_capi.dll next to the application executable.
  *
  * Capture: WA_PaintOnScreen + bgfx — QWidget::grab() is often empty; we use
  * QScreen::grabWindow(winId()) first. Env RCQ_VCAM_TEST_BARS=1 forces a color

@@ -1,10 +1,35 @@
 #include "datamanager.h"
+#include "appsettings.h"
 #include "filetypes.h"
 #include "shorts.h"
 #include "misc.h"
+#include "consts.h"
+#include <functional>
+#include <filesystem>
 
 DataManager::DataManager(AppCore* acptr) {
     this->appCorePtr = acptr;
+
+    pluginFileBroker_ = std::make_unique<PluginFileBrokerImpl>();
+    {
+        const QString dir = AppSettings::writablePluginsCacheDirectory();
+#ifdef _WIN32
+        const std::filesystem::path root(reinterpret_cast<const wchar_t*>(dir.utf16()));
+#else
+        const std::filesystem::path root(dir.toUtf8().constData());
+#endif
+        pluginFileBroker_->setPluginsCacheRoot(root);
+    }
+    pluginDeviceBroker_ = std::make_unique<PluginDeviceBrokerImpl>();
+    IDataBus* bus = acptr->getEventManager().getBusPtr();
+    bus->registerData("plugin_file_broker", static_cast<IPluginFileBroker*>(pluginFileBroker_.get()));
+    bus->registerData("plugin_device_broker", static_cast<IPluginDeviceBroker*>(pluginDeviceBroker_.get()));
+
+    acptr->setPersistPipeline([this](const std::string& dllPathHint) {
+        this->appCorePtr->getEventManager().dispatchImmediately(
+            AppMessage(this->name, AppLifecycleEvents::kPersistModules, dllPathHint));
+        this->cacheManager.pickCache();
+    });
 
     acptr->getEventManager().subscribe(name, "initialize", &DataManager::initialize, this);
     acptr->getEventManager().subscribe(name, "ask_cache", &DataManager::tryToLoadCache, this);
@@ -13,7 +38,10 @@ DataManager::DataManager(AppCore* acptr) {
     acptr->getEventManager().subscribe(name, "sub_to_cache", &CacheManager::cacheSubscribe, &this->cacheManager);
     acptr->getEventManager().subscribe(name, "save", &DataManager::saveFiles, this);
     acptr->getEventManager().subscribe(name, "new", &DataManager::dummy2, this);
-    acptr->getEventManager().subscribe(name, "save_cache", &CacheManager::pickCache, &this->cacheManager);
+    acptr->getEventManager().subscribe(name, "save_cache", std::function<void(const std::any&)>{
+        [this](const std::any&) {
+            this->appCorePtr->persistPluginsAndWriteSessionCache(std::string{});
+        }});
     acptr->getEventManager().subscribe(name, "resolve_render_api_request", &DataManager::resolveApi, this);
     acptr->getEventManager().subscribe(name, "tracking_resolving_request", &DataManager::resolveTracker, this);
     acptr->getEventManager().subscribe(name, "plugin_resolving_request", &DataManager::resolvePlugin, this);

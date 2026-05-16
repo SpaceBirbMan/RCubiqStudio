@@ -74,11 +74,22 @@ void OtherPlugins::addPaths(std::vector<std::string> paths) {
             info.path = path;
             info.type = PluginUIType::Generic;
             core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_ready", info));
+            if (activePluginPaths.count(path))
+                core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_activated", path));
             std::cout << "[OtherPlugins] Plugin already loaded, re-notifying UI: " << path << std::endl;
             continue;
         }
 
-        // Not yet loaded — resolve and load
+        // Not loaded — only resolve when marked active (cache/session) or explicitly enabled via UI
+        if (!activePluginPaths.count(path)) {
+            PluginUIInfo info;
+            info.name = path;
+            info.path = path;
+            info.type = PluginUIType::Generic;
+            core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_ready", info));
+            continue;
+        }
+
         pendingPaths.push(path);
         Meta meta;
         meta.path = path;
@@ -157,14 +168,14 @@ void OtherPlugins::registerPlugin(std::vector<void*> pointers) {
 
         this->plugins.emplace(path, PluginData{plugin, dp});
         activePluginPaths.insert(path);
-        core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_activated", path));
-        core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
 
         PluginUIInfo info;
         info.name = plugin->getName();
         info.path = path;
         info.type = PluginUIType::Generic;
         core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_ready", info));
+        core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_activated", path));
+        core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsRestore, 0));
         std::cout << "[OtherPlugins] Plugin registered: " << plugin->getName() << " @ " << path << std::endl;
 
     } catch (const char* error_message) {
@@ -180,7 +191,9 @@ void OtherPlugins::deletePlugin(std::string path) {
         return;
     }
 
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+    core->persistPluginsAndWriteSessionCache(path);
+
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsInvalidate, 0));
 
     auto it = plugins.find(path);
     if (it != plugins.end()) {
@@ -198,7 +211,7 @@ void OtherPlugins::deletePlugin(std::string path) {
     pluginsRegistry.erase(path);
     activePluginPaths.erase(path);
 
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kPluginRuntimeTeardown, path));
     core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_removed", path));
     core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
 }
@@ -214,7 +227,9 @@ void OtherPlugins::disablePlugin(std::string path) {
         return;
     }
 
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+    core->persistPluginsAndWriteSessionCache(path);
+
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsInvalidate, 0));
 
     // Destroy instance before UI teardown / FreeLibrary (как при удалении, но запись в реестре остаётся).
     it->second.instance->shutdown();
@@ -226,7 +241,7 @@ void OtherPlugins::disablePlugin(std::string path) {
     plugins.erase(it);
     activePluginPaths.erase(path);
 
-    core->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
+    core->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kPluginRuntimeTeardown, path));
     core->getEventManager().sendMessage(AppMessage(name, "unload_library", path));
     core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_deactivated", path));
     std::cout << "[OtherPlugins] Plugin disabled: " << path << std::endl;

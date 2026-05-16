@@ -3,34 +3,55 @@
 #include "databus.h"
 #include "controllayer.h"
 #include <functional>
-#include <QDebug>
+#include <QPalette>
+#include <QColor>
 #include <QThread>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QShowEvent>
+#include <QEvent>
 #include <iostream>
 
 #ifdef _WIN32
 #include <windows.h>
+#include "spoutsender.h"
 #endif
 
 class EngineManager;
+
+/// Child surface that forwards HWND to bgfx; the parent ViewportWidget draws a normal Qt background when this is hidden.
+class EngineSurfaceWidget final : public QWidget {
+public:
+    explicit EngineSurfaceWidget(QWidget* parent) : QWidget(parent) {
+        setAttribute(Qt::WA_NativeWindow, true);
+        setAttribute(Qt::WA_PaintOnScreen, true);
+        setAttribute(Qt::WA_OpaquePaintEvent, true);
+        setFocusPolicy(Qt::StrongFocus);
+    }
+protected:
+    QPaintEngine* paintEngine() const override { return nullptr; }
+    void paintEvent(QPaintEvent*) override {}
+};
 
 ViewportWidget::ViewportWidget(AppCore* core, QWidget* parent)
     : QWidget(parent)
     , core(core)
 {
-    setAttribute(Qt::WA_NativeWindow, true);
-    setAttribute(Qt::WA_PaintOnScreen, true);
+    setAutoFillBackground(true);
+    {
+        QPalette pal = palette();
+        pal.setColor(QPalette::Window, QColor(0x1a, 0x1a, 0x1a));
+        setPalette(pal);
+    }
     setFocusPolicy(Qt::StrongFocus);
-    setStyleSheet("background-color: #1a1a1a;");
-    setAttribute(Qt::WA_OpaquePaintEvent, true);
+
+    engine_surface_ = new EngineSurfaceWidget(this);
+    engine_surface_->setObjectName(QStringLiteral("viewport_engine_surface"));
+    engine_surface_->installEventFilter(this);
+    engine_surface_->hide();
+    engine_surface_->winId();
 
     this->clptr = new ControlLayer(this);
-    winId();
-
-    std::cout << "WHI:" << winId() << std::endl;
-    std::cout << "WHIP:" << (void*)winId() << std::endl;
 
     connect(&timer, &QTimer::timeout, this, [this]() {
         if (m_tickCallback) {
@@ -42,7 +63,8 @@ ViewportWidget::ViewportWidget(AppCore* core, QWidget* parent)
     core->getEventManager().subscribe(name, "get_win_id", &ViewportWidget::initialize, this);
     core->getEventManager().subscribe(name, "get_rec", &ViewportWidget::setReceiver, this);
     core->getEventManager().subscribe(name, "schedule_engine_delete", &ViewportWidget::scheduleEngineDelete, this);
-    canonical_win_id_ = static_cast<uintptr_t>(winId());
+    core->getEventManager().subscribe(name, "clear_viewport_surface", &ViewportWidget::clearNativeSurface, this);
+    canonical_win_id_ = static_cast<uintptr_t>(engine_surface_->winId());
     if (auto* hw = bus_handle_cast<uintptr_t>(core->getEventManager().getBusPtr(), "window_handle"))
         hw->setLive(&canonical_win_id_);
     this->viewport_size[0] = this->size().width();
@@ -70,7 +92,16 @@ void ViewportWidget::updateViewportSize(int w, int h) {
 }
 
 void ViewportWidget::initialize() {
-    core->getEventManager().sendMessage(AppMessage(name, "send_win_id", winId()));
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this]() { initialize(); }, Qt::QueuedConnection);
+        return;
+    }
+    layoutEngineSurface();
+    if (engine_surface_) {
+        engine_surface_->show();
+        engine_surface_->raise();
+    }
+    core->getEventManager().sendMessage(AppMessage(name, "send_win_id", engine_surface_ ? engine_surface_->winId() : winId()));
 }
 
 void ViewportWidget::connectToTimer(std::function<void()> fn) {
@@ -88,15 +119,7 @@ void ViewportWidget::connectToTimer(std::function<void()> fn) {
     }
 
     m_tickCallback = [this]() {
-        {
-            std::lock_guard<std::mutex> lock(_pendingDeleteMutex);
-            for (auto& entry : _pendingEngineDeletes) {
-                delete entry.engine;
-                core->getEventManager().sendMessage(
-                    AppMessage("ViewportWidget", "unload_library", entry.path));
-            }
-            _pendingEngineDeletes.clear();
-        }
+        flushPendingEngineDeletes();
 
         if (this->ren_pip_ptr) {
             std::lock_guard<std::mutex> pipLock{HostInterop::renderPipelineMutex()};
@@ -110,11 +133,23 @@ void ViewportWidget::connectToTimer(std::function<void()> fn) {
         if (m_afterFrame) {
             m_afterFrame();
         }
+#ifdef _WIN32
+        if (engine_surface_) {
+            spoutAfterRenderTick(core->getEventManager().getBusPtr(),
+                                   reinterpret_cast<void*>(static_cast<quintptr>(engine_surface_->winId())),
+                                   viewport_size[0],
+                                   viewport_size[1]);
+        }
+#endif
     };
 
     if (!timer.isActive()) {
         timer.start(16);
     }
+    QTimer::singleShot(0, this, [this]() {
+        layoutEngineSurface();
+        updateViewportSize(width(), height());
+    });
 
     std::cout << "[READY_T2]" << std::endl;
     core->getEventManager().sendMessage(AppMessage(name, "send_vp", this));
@@ -126,7 +161,13 @@ ViewportWidget::~ViewportWidget() {
 
 void ViewportWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    layoutEngineSurface();
     updateViewportSize(width(), height());
+    // After layout/dock placement, size can still be stale until the next event loop tick.
+    QTimer::singleShot(0, this, [this]() {
+        layoutEngineSurface();
+        updateViewportSize(width(), height());
+    });
 }
 
 void ViewportWidget::setReceiver(EngineManager* r) {
@@ -135,14 +176,63 @@ void ViewportWidget::setReceiver(EngineManager* r) {
         return;
     }
     this->eng_receiver = r;
-    if (r && isVisible()) {
+    if (r) {
         updateViewportSize(width(), height());
+        QTimer::singleShot(0, this, [this]() {
+            layoutEngineSurface();
+            updateViewportSize(width(), height());
+        });
     }
 }
 
 void ViewportWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
+    layoutEngineSurface();
     updateViewportSize(event->size().width(), event->size().height());
+}
+
+void ViewportWidget::layoutEngineSurface()
+{
+    if (!engine_surface_)
+        return;
+    engine_surface_->setGeometry(0, 0, width(), height());
+}
+
+bool ViewportWidget::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched != engine_surface_)
+        return QWidget::eventFilter(watched, event);
+
+    const QEvent::Type t = event->type();
+    if (t == QEvent::MouseButtonPress || t == QEvent::MouseButtonRelease || t == QEvent::MouseMove) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        ViewportCommand cmd;
+        cmd.mouseX = me->position().toPoint().x();
+        cmd.mouseY = me->position().toPoint().y();
+        if (t == QEvent::MouseButtonPress) {
+            if (me->button() == Qt::LeftButton) cmd.currentCommand.insert("left_down");
+            else if (me->button() == Qt::RightButton) cmd.currentCommand.insert("right_down");
+            else if (me->button() == Qt::MiddleButton) cmd.currentCommand.insert("middle_down");
+        } else if (t == QEvent::MouseButtonRelease) {
+            if (me->button() == Qt::LeftButton) cmd.currentCommand.insert("left_up");
+            else if (me->button() == Qt::RightButton) cmd.currentCommand.insert("right_up");
+            else if (me->button() == Qt::MiddleButton) cmd.currentCommand.insert("middle_up");
+        } else if (t == QEvent::MouseMove && (me->buttons() & Qt::LeftButton)) {
+            cmd.currentCommand.insert("dragging");
+        }
+        commandQueue.push_back(cmd);
+        return false;
+    }
+    if (t == QEvent::Wheel) {
+        auto* we = static_cast<QWheelEvent*>(event);
+        ViewportCommand cmd;
+        cmd.mouseX = we->position().toPoint().x();
+        cmd.mouseY = we->position().toPoint().y();
+        cmd.scroll = we->angleDelta().y();
+        commandQueue.push_back(cmd);
+        return false;
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void ViewportWidget::mousePressEvent(QMouseEvent* event) {
@@ -213,14 +303,6 @@ void ViewportWidget::leaveEvent(QEvent* event) {
     QWidget::leaveEvent(event);
 }
 
-QPaintEngine* ViewportWidget::paintEngine() const {
-    return nullptr;
-}
-
-void ViewportWidget::paintEvent(QPaintEvent*) {
-    //void
-}
-
 void ViewportWidget::paintFrame() {
 }
 
@@ -229,9 +311,49 @@ void ViewportWidget::setAfterFrameCallback(std::function<void()> cb)
     m_afterFrame = std::move(cb);
 }
 
+void ViewportWidget::clearNativeSurface() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this]() { clearNativeSurface(); }, Qt::QueuedConnection);
+        return;
+    }
+    if (engine_surface_)
+        engine_surface_->hide();
+    update();
+}
+
+void ViewportWidget::flushPendingEngineDeletes() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this,
+                                  [this]() { flushPendingEngineDeletes(); },
+                                  Qt::BlockingQueuedConnection);
+        return;
+    }
+
+    std::vector<PendingEngineDelete> batch;
+    {
+        std::lock_guard<std::mutex> lock(_pendingDeleteMutex);
+        batch.swap(_pendingEngineDeletes);
+    }
+
+    for (auto& entry : batch) {
+#ifdef _WIN32
+        spoutNotifyEngineDeviceReset();
+#endif
+        delete entry.engine;
+        core->getEventManager().sendMessage(
+            AppMessage("ViewportWidget", "unload_library", entry.path));
+    }
+}
+
 void ViewportWidget::scheduleEngineDelete(std::pair<IModel*, std::string> info) {
-    // Called from the MessageProcessor thread — just store; deletion happens in the timer tick.
-    std::lock_guard<std::mutex> lock(_pendingDeleteMutex);
-    _pendingEngineDeletes.push_back({info.first, info.second});
+    {
+        std::lock_guard<std::mutex> lock(_pendingDeleteMutex);
+        _pendingEngineDeletes.push_back({info.first, info.second});
+    }
+
+    QMetaObject::invokeMethod(this,
+                              [this]() { flushPendingEngineDeletes(); },
+                              Qt::QueuedConnection);
+
     std::cout << "[ViewportWidget] Engine scheduled for main-thread deletion: " << info.second << std::endl;
 }

@@ -18,27 +18,26 @@ void MessageProcessor::process() {
             lock.unlock();
             {
                 struct DispatchGuard {
-                    std::atomic<bool>& ref;
-                    explicit DispatchGuard(std::atomic<bool>& r) : ref(r) {
-                        ref.store(true, std::memory_order_release);
+                    std::atomic<int>& depth;
+                    explicit DispatchGuard(std::atomic<int>& d) : depth(d) {
+                        depth.fetch_add(1, std::memory_order_acq_rel);
                     }
                     ~DispatchGuard() {
-                        ref.store(false, std::memory_order_release);
+                        depth.fetch_sub(1, std::memory_order_acq_rel);
                     }
-                } guard{dispatching};
+                } guard{dispatchDepth};
 
-                for (const subStruct sstr : subsVector) {
-                    if (msg.getMessage() == sstr.name) {
-                        try {
-                            // TODO: Походу придётся всё приводить к типу bool callback(std::any) и сваливать приведение на коллбеки
-                            sstr.callback(msg.getData());
-                        }
-                        catch (const std::exception& e) {
-                            std::cerr << "Exception in callback '"
-                                      << sstr.name << "' " << e.what() << std::endl;
-                        }
-                        std::cout << "[RECEIVER] " << sstr.receiver << std::endl;
+                const std::vector<subStruct> subsCopy = getSubscribersSnapshot(msg.getMessage());
+                for (const subStruct& sstr : subsCopy) {
+                    try {
+                        // TODO: Походу придётся всё приводить к типу bool callback(std::any) и сваливать приведение на коллбеки
+                        sstr.callback(msg.getData());
                     }
+                    catch (const std::exception& e) {
+                        std::cerr << "Exception in callback '"
+                                  << sstr.name << "' " << e.what() << std::endl;
+                    }
+                    std::cout << "[RECEIVER] " << sstr.receiver << std::endl;
                 }
             }
 
@@ -49,4 +48,3 @@ void MessageProcessor::process() {
 
 
 //TODO: Защита от зацикливания вызовов
-// TODO: Заменить на бинарный поиск, после инициализации выполнять сортировку по алфавиту

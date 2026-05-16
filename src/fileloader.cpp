@@ -17,12 +17,12 @@ payload FileLoader::loadBin(std::string path) {
     } catch (...) {
         // TODO: catch
     }
-
+    return {};
 }
 
 nlohmann::json FileLoader::loadJson(std::string path) {
 
-    nlohmann::json j;
+    nlohmann::json j = nlohmann::json::object();
 
     try {
         std::ifstream file(path);
@@ -30,11 +30,11 @@ nlohmann::json FileLoader::loadJson(std::string path) {
             file >> j;
             file.close();
         } else {
-            std::cerr << "Error opening file for reading!" << std::endl;
+            std::cerr << "Cannot open JSON for reading: " << path << std::endl;
         }
 
         return j;
     } catch (...) {
-        return nullptr;
+        return nlohmann::json::object();
     }
 }

@@ -1,4 +1,6 @@
 #include "devicemanager.h"
+#include "plugindevicebroker.h"
+#include <any>
 #include <string>
 #include <iostream>
 #include <opencv2/opencv.hpp>
@@ -212,24 +214,26 @@ void DeviceManager::stopHid()
 
 void DeviceManager::activateCamera(std::string name)
 {
-    CameraInfo foundCamera;
-    bool exists = false;
-
-    for (const auto &camera : cameras)
-    {
-        if (camera.name == name)
-        {
-            foundCamera = camera;
-            exists = true;
-            break;
+    auto findCam = [&](const std::string& nm) -> const CameraInfo* {
+        for (const auto& camera : cameras) {
+            if (camera.name == nm)
+                return &camera;
         }
+        return nullptr;
+    };
+
+    const CameraInfo* pf = findCam(name);
+    if (!pf) {
+        cameras = enumerateCameras(10);
+        pf = findCam(name);
     }
 
-    if (!exists)
-    {
+    if (!pf) {
         std::cerr << "Error: Camera not found by name: " << name << std::endl;
         return;
     }
+
+    const CameraInfo& foundCamera = *pf;
 
     std::string expectedId = "video:" + std::to_string(foundCamera.index);
 
@@ -274,8 +278,14 @@ void DeviceManager::activateCamera(std::string name)
 
 void DeviceManager::initialize()
 {
-    getCaptureDevices();
-    this->acptr->getEventManager().sendMessage(AppMessage(name, "start_hid_listeners", 0));
+    try {
+        IDataBus* bus = this->acptr->getEventManager().getBusPtr();
+        auto& slot = bus->getData("plugin_device_broker");
+        auto* raw = std::any_cast<IPluginDeviceBroker*>(slot);
+        if (auto* impl = dynamic_cast<PluginDeviceBrokerImpl*>(raw))
+            impl->setDeviceManager(this);
+    } catch (...) {
+    }
 }
 
 #ifdef _WIN32
@@ -285,7 +295,7 @@ namespace {
 // *lightweight* enumeration: it just reads the registry and queries the
 // device's IPropertyBag for FriendlyName / DevicePath — it does NOT
 // instantiate the filters, so camera driver DLLs (including our own
-// AkVirtualCamera.dll) are NOT loaded into the M3 process.
+// AkVirtualCamera.dll) are NOT loaded into the host process.
 struct DShowVideoDevice
 {
     std::wstring friendlyName;
@@ -381,7 +391,7 @@ bool isLikelyVirtualCamera(const std::wstring &friendlyName,
 
     // Hints that match virtual-camera providers we've seen in the wild.
     // We include "rcq" specifically because this is the description the
-    // current user renamed their M3 / AkVCam device to.  Any real camera
+    // current user renamed their AkVCam virtual device entry to. Any real camera
     // with one of these substrings in its name would also be skipped —
     // in practice that's acceptable: real webcams don't use these names.
     static const wchar_t *kVirtualHints[] = {
@@ -420,9 +430,9 @@ std::vector<CameraInfo> DeviceManager::enumerateCameras(int maxIndex)
 #ifdef _WIN32
     // List DShow cameras *without* instantiating their filters.  That keeps
     // AkVirtualCamera.dll (and any other virtual-camera provider) out of
-    // M3's own process — loading it here would create a second IpcBridge
+    // the host process — loading it here would create a second IpcBridge
     // next to the one the capi owns, fight over the same SharedMemory
-    // service lock, and crash M3.  We iterate by DShow enumeration index:
+    // service lock, and crash the app.  We iterate by DShow enumeration index:
     // OpenCV's CAP_DSHOW backend uses the exact same index order as
     // ICreateDevEnum, so we can hand the index straight to VideoCapture.
     const auto dshowDevices = listDShowVideoDevices();
@@ -554,10 +564,10 @@ std::vector<AudioDeviceInfo> DeviceManager::getCaptureDevices()
         for (ma_uint32 i = 0; i < captureCount; ++i)
         {
             AudioDeviceInfo info;
-            info.id = pCaptureInfos[i].name;
+            info.id.assign(reinterpret_cast<const char*>(&pCaptureInfos[i].id), sizeof(ma_device_id));
             info.name = pCaptureInfos[i].name;
-            info.type = ma_device_type_capture;
-            devices.push_back(info);
+            info.type = "audio_capture";
+            devices.push_back(std::move(info));
 
             std::cout << "Device " << i << ": " << info.name << "\n";
         }
@@ -565,6 +575,17 @@ std::vector<AudioDeviceInfo> DeviceManager::getCaptureDevices()
 
     ma_context_uninit(&context);
     return devices;
+}
+
+std::vector<std::pair<std::string, std::string>> DeviceManager::enumerateRegisteredDevices() const
+{
+    std::lock_guard<std::mutex> lock(mtx_);
+    std::vector<std::pair<std::string, std::string>> out;
+    out.reserve(devices_.size());
+    for (const auto& p : devices_) {
+        out.emplace_back(p.first, p.first);
+    }
+    return out;
 }
 
 bool DeviceManager::openDevice(const std::string &id)

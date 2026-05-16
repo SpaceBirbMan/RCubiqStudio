@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>M3</string>
+   <string>RCubiQ Studio</string>
   </property>
   <property name="dockNestingEnabled">
    <bool>true</bool>
@@ -62,7 +62,7 @@
          </size>
         </property>
         <property name="text">
-         <string>Alpha build</string>
+         <string>Alpha build. Work in progress — expect instability.</string>
         </property>
        </widget>
       </item>
@@ -89,7 +89,7 @@
       <item>
        <widget class="QLabel" name="gpu_label">
         <property name="text">
-         <string>GPU: 0</string>
+         <string>GPU (frame): 0</string>
         </property>
        </widget>
       </item>
@@ -127,6 +127,8 @@
     <addaction name="actionViewDockEngine"/>
     <addaction name="actionViewDockViewport"/>
     <addaction name="actionViewDockPlugins"/>
+    <addaction name="separator"/>
+    <addaction name="actionViewResetLayout"/>
    </widget>
    <widget class="QMenu" name="menu_3">
     <property name="title">
@@ -137,8 +139,10 @@
     <property name="title">
      <string>Settings</string>
     </property>
-    <addaction name="action_Render_API"/>
+    <addaction name="actionPreferences"/>
+    <addaction name="separator"/>
     <addaction name="action"/>
+    <addaction name="action_Render_API"/>
    </widget>
    <addaction name="menu"/>
    <addaction name="menu_2"/>
@@ -268,7 +272,7 @@
               <x>0</x>
               <y>0</y>
               <width>302</width>
-              <height>491</height>
+              <height>271</height>
              </rect>
             </property>
             <layout class="QVBoxLayout" name="verticalLayout">
@@ -283,7 +287,7 @@
                   <x>0</x>
                   <y>0</y>
                   <width>280</width>
-                  <height>434</height>
+                  <height>214</height>
                  </rect>
                 </property>
                 <attribute name="label">
@@ -387,7 +391,7 @@
               <x>0</x>
               <y>0</y>
               <width>280</width>
-              <height>393</height>
+              <height>173</height>
              </rect>
             </property>
             <layout class="QVBoxLayout" name="verticalLayout_8">
@@ -402,7 +406,7 @@
                   <x>0</x>
                   <y>0</y>
                   <width>258</width>
-                  <height>336</height>
+                  <height>116</height>
                  </rect>
                 </property>
                 <attribute name="label">
@@ -412,37 +416,6 @@
               </widget>
              </item>
             </layout>
-           </widget>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-       <widget class="QWidget" name="preferencesTab">
-        <attribute name="title">
-         <string>Preferences</string>
-        </attribute>
-        <layout class="QVBoxLayout" name="verticalLayout_5">
-         <item>
-          <widget class="QScrollArea" name="scrollArea">
-           <property name="widgetResizable">
-            <bool>true</bool>
-           </property>
-           <widget class="QWidget" name="scrollAreaWidgetContents_2">
-            <property name="geometry">
-             <rect>
-              <x>0</x>
-              <y>0</y>
-              <width>280</width>
-              <height>469</height>
-             </rect>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <layout class="QVBoxLayout" name="verticalLayout_6"/>
            </widget>
           </widget>
          </item>
@@ -470,6 +443,16 @@
    </property>
    <property name="text">
     <string>Save setup as…</string>
+   </property>
+  </action>
+  <action name="actionPreferences">
+   <property name="text">
+    <string>Preferences…</string>
+   </property>
+  </action>
+  <action name="separatorPrefRender">
+   <property name="separator" stdset="0">
+    <bool>true</bool>
    </property>
   </action>
   <action name="action_Render_API">
@@ -504,6 +487,16 @@
    </property>
    <property name="text">
     <string>Plugins &amp; devices</string>
+   </property>
+  </action>
+  <action name="separatorViewReset">
+   <property name="separator" stdset="0">
+    <bool>true</bool>
+   </property>
+  </action>
+  <action name="actionViewResetLayout">
+   <property name="text">
+    <string>Установить интерфейс по умолчанию</string>
    </property>
   </action>
  </widget>

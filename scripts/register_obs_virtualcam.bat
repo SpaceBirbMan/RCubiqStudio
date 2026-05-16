@@ -34,7 +34,7 @@ if errorlevel 1 (
 echo OK: OBS Virtual Camera DirectShow filter is registered.
 echo.
 echo Now:
-echo  1. Start M3 - it will create OBSVirtualCamVideo shared memory.
+echo  1. Запустите RCubiQ Studio — приложение создаст общую память OBSVirtualCamVideo.
 echo  2. In Zoom choose "OBS Virtual Camera" as the camera source.
 echo     (If Zoom is already open, restart it so it re-enumerates cameras.)
 pause

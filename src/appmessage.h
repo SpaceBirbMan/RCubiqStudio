@@ -29,17 +29,13 @@ public:
         this->data = data;
     }
 
-    messageType getMessage() {
-        return this->message;
-    }
+    messageType getMessage() { return message; }
+    senderType getSender() { return sender; }
+    std::any getData() { return data; }
 
-    senderType getSender() {
-        return this->sender;
-    }
-
-    std::any getData() {
-        return this->data;
-    }
+    const messageType& getMessage() const { return message; }
+    const senderType& getSender() const { return sender; }
+    const std::any& getData() const { return data; }
 
     std::string toString() {
         // return std::to_string(sender) + " " + std::to_string(message);

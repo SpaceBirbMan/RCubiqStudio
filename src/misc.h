@@ -6,14 +6,16 @@
 #include <unordered_map>
 #include <functional>
 #include <any>
+#include <cstdint>
 #include <mutex>
+#include <unordered_set>
 #include <nlohmann/json.hpp>
 #include <deque>
 #include "abstractuinodes.h"
 
 // Общая синхронизация для слотов шины, которые плагины меняют при работе/выгрузке,
 // а хост (движок) читает из другого потока (например control_table).
-namespace M3Stream {
+namespace PluginBusLocks {
 inline std::mutex& streamBusMutex() {
     static std::mutex m;
     return m;
@@ -117,6 +119,47 @@ struct AudioDeviceInfo {
     std::string type;
 };
 
+/// Единая запись списка устройств (камеры, захват звука, HID, зарегистрированные в DeviceManager).
+struct PluginDeviceDescriptor {
+    std::string id;
+    std::string name;
+    /// Например: "camera", "audio_capture", "hid", "device".
+    std::string kind;
+};
+
+/// Хост предоставляет поток захвата; плагин только читает моно F32 сэмплы (без SDL/miniaudio в DLL).
+class IAudioCaptureStream {
+public:
+    virtual ~IAudioCaptureStream() = default;
+    /// Читает до maxSamples моно-сэмплов. Возвращает число записанных float.
+    virtual int read(float* out, int maxSamples) noexcept = 0;
+    virtual bool isOpen() const noexcept = 0;
+};
+
+/// Устройства, доступные приложению (агрегирует DeviceManager + miniaudio для открытия захвата).
+class IPluginDeviceBroker {
+public:
+    virtual ~IPluginDeviceBroker() = default;
+    virtual std::vector<PluginDeviceDescriptor> listDevices() = 0;
+    /// Только для kind == "audio_capture": id — бинарный blob `ma_device_id` (как раньше у списка микрофонов).
+    virtual IAudioCaptureStream* openAudioCapture(const std::string& deviceId) = 0;
+};
+
+struct PluginFileReadResult {
+    bool ok = false;
+    std::vector<uint8_t> bytes;
+};
+
+/// Файлы плагина под `plugins_cache` (записываемый корень задаёт хост) + относительный путь на scopeKey из `setPluginStorageRelativePath`.
+class IPluginFileBroker {
+public:
+    virtual ~IPluginFileBroker() = default;
+    /// Не более одного сегмента или подпути без `..`; пустая строка — только каталог по scopeKey.
+    virtual void setPluginStorageRelativePath(const std::string& scopeKey, const std::string& relativePathUnderPluginsCache) = 0;
+    virtual PluginFileReadResult read(const std::string& scopeKey, const std::string& fileName) = 0;
+    virtual bool write(const std::string& scopeKey, const std::string& fileName, const uint8_t* data, size_t size) = 0;
+};
+
 struct TrackerInfo {
 
 };
@@ -127,6 +170,17 @@ struct PluginUIInfo {
     std::string name;   // display name
     std::string path;   // file path (key for removal/identification)
     PluginUIType type;
+};
+
+/// Снимок нажатых клавиш (слот данных шины `keyboard_state`; читать под `mutex`).
+struct KeyboardKeysState {
+    mutable std::mutex mutex;
+    /// Значения `Qt::Key` (глобально, не только при фокусе на главном окне).
+    std::unordered_set<int> keysHeldQt;
+#ifdef _WIN32
+    /// То же через `nativeVirtualKey()` под Windows для интеграций в стиле Win32/VK_*.
+    std::unordered_set<int> keysHeldNative;
+#endif
 };
 
 /// Описание деревьев интерфейса движка: путь DLL + идентификатор для AppMessage::sender + указатель на страницы.
@@ -212,7 +266,7 @@ public:
     IGenPlugin() = default;
     IGenPlugin(IEventManager* eventManager, IDataBus* dataBus) {}
     virtual ~IGenPlugin() = default;
-    /// Путь пакета (.ofp) / модуля — для тегирования вкладок (m3_plugin_library_path) при init_ui_eng из плагина.
+    /// Путь пакета (.ofp) / модуля — для тегирования вкладок (свойство `plugin_library_path` на Qt-виджете) при init_ui_eng из плагина.
     virtual void setLibraryPath(const std::string& /*path*/) {}
     /// Снять привязки к шине (control_table и т.д.) до выгрузки DLL — иначе остаются висячие указатели.
     virtual void shutdown() {}

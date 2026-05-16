@@ -2,6 +2,7 @@
 #define APPCORE_H
 
 #include "eventmanager.h"
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -17,6 +18,10 @@ public:
     }
 
     CrashHandler& getCrashHandler() { return *crashHandler; }
+
+    /// Цепочка: синхронно разослать persist_modules подписчикам и записать session/cache (устанавливает DataManager).
+    void setPersistPipeline(std::function<void(const std::string& dllPathHint)> fn);
+    void persistPluginsAndWriteSessionCache(const std::string& dllPathHint);
 
     // вынести subscribe, send и прочее
 
@@ -38,6 +43,7 @@ private:
     EventQueue *eQueuePointer = nullptr;
     EventManager eventManager;
     std::unique_ptr<CrashHandler> crashHandler;
+    std::function<void(const std::string&)> persistPipeline_;
 
     void dummyFunction() {
         std::cout<< eQueuePointer->logQueue() << std::endl;

@@ -57,6 +57,9 @@ public:
     std::vector<CameraInfo> enumerateCameras(int maxIndex = 10);
     std::vector<AudioDeviceInfo> getCaptureDevices();
     std::vector<HidDeviceInfo> enumerateHidDevices(unsigned short vid = 0, unsigned short pid = 0);
+    /// id и отображаемое имя зарегистрированных в менеджере устройств.
+    std::vector<std::pair<std::string, std::string>> enumerateRegisteredDevices() const;
+
     // virtual camera
     // spout viewport
 

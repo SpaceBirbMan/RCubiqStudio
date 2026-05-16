@@ -1,6 +1,10 @@
 #include "enginemanager.h"
 #include "consts.h"
 
+#ifdef _WIN32
+#include "spoutsender.h"
+#endif
+
 EngineManager::EngineManager(AppCore* acptr) {
     this->acptr = acptr;
 
@@ -105,22 +109,25 @@ void EngineManager::deactivateEngineByPath(std::string path) {
         return;
     }
 
-    acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+    acptr->persistPluginsAndWriteSessionCache(path);
+
+    acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsInvalidate, 0));
 
     auto it = engines.find(path);
     if (it != engines.end()) {
         EngineData data = it->second;
         engines.erase(it);
 
+#ifdef _WIN32
+        spoutNotifyEngineDeviceReset();
+#endif
         data.instance->shutdown();
 
-        struct EngineDeleteInfo {
-            IModel* engine;
-            DestroyEngine destroy;
-            std::string path;
-        };
-        EngineDeleteInfo info = {data.instance, data.destroy, path};
-        acptr->getEventManager().sendMessage(AppMessage(name, "schedule_engine_delete", info));
+        // Payload MUST be std::pair<IModel*, std::string> — ViewportWidget subscribes with that exact type;
+        // a local struct would never match typeid and deletes (bgfx::shutdown) would never run.
+        acptr->getEventManager().sendMessage(AppMessage(
+            name, "schedule_engine_delete",
+            std::make_pair(data.instance, path)));
         std::cout << "[EngineManager] Engine deactivated; delete scheduled: " << path << std::endl;
     }
 
@@ -130,8 +137,9 @@ void EngineManager::deactivateEngineByPath(std::string path) {
         std::cout << "[EngineManager] Active engine cleared (deactivate)\n";
     }
 
-    acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
+    acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kPluginRuntimeTeardown, path));
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_set_inactive", path));
+    acptr->getEventManager().sendMessage(AppMessage(name, "clear_viewport_surface", 0));
 }
 
 void EngineManager::removeEngine(std::string path) {
@@ -140,7 +148,9 @@ void EngineManager::removeEngine(std::string path) {
         return;
     }
 
-    acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsInvalidate, 0));
+    acptr->persistPluginsAndWriteSessionCache(path);
+
+    acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsInvalidate, 0));
 
     // Destroy instance first (calls DLL code before library is unloaded)
     auto it = engines.find(path);
@@ -148,21 +158,18 @@ void EngineManager::removeEngine(std::string path) {
         EngineData data = it->second;
         engines.erase(it);  // remove from map before shutdown to prevent re-entry
 
+#ifdef _WIN32
+        spoutNotifyEngineDeviceReset();
+#endif
         // shutdown() nulls the pipeline slot and waits for any in-progress tick.
         // It is safe to call from this (MessageProcessor) thread.
         data.instance->shutdown();
 
         // Actual delete (→ bgfx::shutdown) must run on the main thread.
-        // ViewportWidget processes this in its timer callback and then sends unload_library.
-        struct EngineDeleteInfo {
-            IModel* engine;
-            DestroyEngine destroy;
-            std::string path;
-        };
-        EngineDeleteInfo info = {data.instance, data.destroy, path};
-
+        // ViewportWidget subscribes on std::pair<IModel*, std::string>; see deactivate_engine_by_path.
         acptr->getEventManager().sendMessage(
-            AppMessage(name, "schedule_engine_delete", info));
+            AppMessage(name, "schedule_engine_delete",
+                       std::make_pair(data.instance, path)));
         std::cout << "[EngineManager] Engine shutdown done; delete scheduled on main thread: " << path << std::endl;
     }
 
@@ -174,9 +181,10 @@ void EngineManager::removeEngine(std::string path) {
         std::cout << "[EngineManager] Active engine cleared\n";
     }
 
-    acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kPluginRuntimeTeardown, path));
+    acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kPluginRuntimeTeardown, path));
     // Notify UI to remove the page (и вкладки — дубль с teardown, порядок как у gen_plugin)
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_ui_removed", path));
+    acptr->getEventManager().sendMessage(AppMessage(name, "clear_viewport_surface", 0));
 }
 
 /**
@@ -260,7 +268,7 @@ void EngineManager::sendTrackerTable(std::unordered_map<std::string, std::shared
         em.table = table;
         em.windowHandle = 0;
         it->second.instance->setMeta(em);
-        acptr->getEventManager().sendMessage(AppMessage(name, M3Events::kStreamBindingsRestore, 0));
+    acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsRestore, 0));
     }
 }
 

@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 
+#include <QString>
+
 class EventManager;
 
 /// Диагностика падений через [cpptrace](https://github.com/jeremy-rifkin/cpptrace).
@@ -23,6 +25,9 @@ public:
     void install();
     /// Вызвать после конструкторов модулей, до или в начале exec(): прошлый краш → AppMessage.
     void publishPendingIfAny();
+
+    /// Каталог с файлами отчётов о сбоях (рядом с исполняемым файлом, подкаталог crash_logs).
+    QString crashLogsDirectory() const;
 
     void forceCreateDump(const std::string& dump_dir = {});
     void forceCloseApp();

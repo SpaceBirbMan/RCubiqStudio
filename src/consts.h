@@ -4,12 +4,14 @@
 
 const std::string CACHE_FILE_PATH = "cache.json";
 
-// Обобщённые события жизненного цикла потоковых привязок (без идентификации конкретного плагина).
-namespace M3Events {
+/// Строковые топики событий жизненного цикла (шина сообщений).
+namespace AppLifecycleEvents {
 inline constexpr const char* kStreamBindingsInvalidate = "stream_bindings_invalidate";
 inline constexpr const char* kStreamBindingsRestore = "stream_bindings_restore";
-/// Снять Qt-вкладки с m3_plugin_library_path == path до unload DLL (отключение по чекбоксу, не удаление из списка).
+/// Снять Qt-вкладки до выгрузки DLL (виджеты с свойством `plugin_library_path`).
 inline constexpr const char* kPluginRuntimeTeardown = "plugin_runtime_teardown";
+/// Плагины могут отреагировать и отдать данные хосту; payload — путь DLL или пустая строка.
+inline constexpr const char* kPersistModules = "persist_modules";
 }
 
-#endif // CONSTS_H
+#endif

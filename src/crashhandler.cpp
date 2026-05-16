@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QMetaObject>
 #include <QProcess>
+#include <QString>
 
 #include <atomic>
 #include <cstdio>
@@ -304,6 +305,11 @@ void CrashHandler::publishPendingIfAny()
 #ifdef _WIN32
     show_native_pending_dialog(path);
 #endif
+}
+
+QString CrashHandler::crashLogsDirectory() const
+{
+    return QString::fromStdString(crash_logs_dir_);
 }
 
 void CrashHandler::forceCreateDump(const std::string& dump_dir)

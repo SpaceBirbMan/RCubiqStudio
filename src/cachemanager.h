@@ -4,7 +4,6 @@
 #include "filesaver.h"
 #include "fileloader.h"
 #include "misc.h"
-#include "consts.h"
 
 class CacheManager
 {

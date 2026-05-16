@@ -7,7 +7,7 @@
 <span style="color:red; font-weight:bold; font-size: 30px"> Обязательно! </span>
 
 proj_dir
-* M3 - основное приложение
+* RCubiQ Studio — основное приложение
 * bgfx - основная зависимость в рендере
     * bgfx
     * bgfx.cmake

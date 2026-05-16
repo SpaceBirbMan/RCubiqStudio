@@ -4,6 +4,8 @@
 #define NOBYTE
 #define WIN32_LEAN_AND_MEAN
 
+#include <QEvent>
+
 #include <QWidget>
 #include <QElapsedTimer>
 #include <QTimer>
@@ -41,9 +43,7 @@ public:
 protected:
     void showEvent(QShowEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
-    QPaintEngine* paintEngine() const override;
-    void paintEvent(QPaintEvent*) override;
-    void sendHandlers();
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -85,6 +85,12 @@ private:
     void setReceiver(EngineManager* r);
     void updateViewportSize(int w, int h);
     void scheduleEngineDelete(std::pair<IModel*, std::string> info);
+    /// Runs queued engine deletes on the GUI thread so bgfx shutdown happens before further activate/get_win_id.
+    void flushPendingEngineDeletes();
+    void clearNativeSurface();
+    void layoutEngineSurface();
+
+    QWidget* engine_surface_ = nullptr;
 
     int viewport_size[2] {0, 0};
 
