@@ -331,6 +331,14 @@ if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(Studio)
 endif()
 
+# --- Портативный набор DLL рядом с exe (MinGW/Qt/OpenCV/pkg-config; без MSVC runtime) ---
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/StudioDeployWindows.cmake")
+studio_write_runtime_search_paths("${CMAKE_BINARY_DIR}/studio_deploy_search_dirs.txt")
+if(WIN32)
+    studio_add_windows_runtime_postbuild(Studio "${CMAKE_BINARY_DIR}/studio_deploy_search_dirs.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/StudioDeployRuntimeFallback.cmake")
+endif()
+
 foreach(_qm IN LISTS QM_FILES)
     add_custom_command(
         TARGET Studio POST_BUILD
