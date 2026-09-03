@@ -15,6 +15,7 @@
 #include "rcqapi.h"
 #include <unordered_map>
 
+// TODO: Пора добавлять поддержку архивов. Плагин придётся усложнять, так как невозможно всё сразу в библиотеку запечатать
 class DataManager
 {
 public:
@@ -32,7 +33,7 @@ private:
     AppCore* appCorePtr = nullptr; // ядро
 
     /// Внутренние модули модуля
-    ModelManager modelManager = ModelManager(); // были указатели, вспомнить зачем
+    ModelManager modelManager = ModelManager(); // TODO: были указатели, вспомнить зачем
     CacheManager cacheManager;
     CrashReportManager crashReportManager;
 
