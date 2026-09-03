@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
-#include "misc.h"
+#include "rcqapi.h"
 #include "bushandle.h"
 
 /// Шина данных. Потокобезопасность ключей — задача вызывающих; «живые» каналы см. registerBusHandle.

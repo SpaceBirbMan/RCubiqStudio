@@ -57,6 +57,20 @@ public:
         this->subscribe("N/A", msg, std::move(callback));
     }
 
+    template <typename T, typename C>
+    void subscribeGroup(const std::string& name, C* instance) {
+        // Базовый случай - ничего не делаем
+    }
+
+    template <typename T, typename C, typename... Rest>
+    void subscribeGroup(const std::string& name, C* instance,
+                        const std::string& eventName, void(C::*method)(T),
+                        Rest&&... rest) {
+        subscribe(eventName, instance, method);
+        subscribeGroup<T>(name, instance, std::forward<Rest>(rest)...);
+    }
+
+
     virtual void sendMessage(AppMessage message) = 0;
 
     /// Вызывает подписчиков по теме сообщения сразу, на стеке текущего потока (без постановки в очередь).

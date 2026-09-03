@@ -3,7 +3,7 @@
 
 #include "filesaver.h"
 #include "fileloader.h"
-#include "misc.h"
+#include "rcqapi.h"
 
 class CacheManager
 {

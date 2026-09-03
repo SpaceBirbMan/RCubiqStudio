@@ -1,8 +1,10 @@
 #include "consts.h"
+#include "logger.h"
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
-#include "misc.h"
+#include "rcqapi.h"
 #include "appsettings.h"
+#include "appshutdown.h"
 #include <QQuickView>
 #include <QTableWidget>
 #include <QHeaderView>
@@ -11,6 +13,7 @@
 #include "obsvirtualcamera.h"
 #include "settingsdialog.h"
 #include "uirenderer.h"
+#include "uitabstyling.h"
 #include "trackerrenderer.h"
 #include <QDebug>
 #include <QTimer>
@@ -20,6 +23,7 @@
 #include <qthread.h>
 #include <QMetaObject>
 #include <QLabel>
+#include <QLineEdit>
 #include <QVBoxLayout>
 #include <QMenu>
 #include <QCursor>
@@ -85,6 +89,24 @@ bool subtreeHasPluginPath(QWidget* root, const QString& needlePath)
     return false;
 }
 
+void restylePluginsToolBox(QToolBox* box) {
+    if (!box)
+        return;
+    for (int i = 0; i < box->count(); ++i) {
+        QWidget* w = box->widget(i);
+        if (!w)
+            continue;
+        const auto type = static_cast<PluginUIType>(w->property("pluginType").toInt());
+        styleToolBoxTabButton(box, i, pluginUiTypeToTabCategory(type));
+    }
+}
+
+void deferRestylePluginsToolBox(QToolBox* box) {
+    if (!box)
+        return;
+    QTimer::singleShot(0, box, [box]() { restylePluginsToolBox(box); });
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent, AppCore *core)
@@ -94,6 +116,9 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     this->core = core;
     ui->setupUi(this);
 
+    for (int i = 0; i < ui->rightPanel->count(); ++i)
+        setTabCategory(ui->rightPanel, i, UiTabCategory::App);
+
     ui->centralwidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     ui->centralwidget->setMaximumHeight(ui->centralwidget->sizeHint().height());
 
@@ -102,6 +127,13 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     ui->dockWidget_3->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
     applyDefaultDockLayout();
+
+    _trackerFilterEdit = new QLineEdit(ui->pageTrackers);
+    _trackerFilterEdit->setPlaceholderText(tr("Filter source or parameter…"));
+    _trackerFilterEdit->setClearButtonEnabled(true);
+    if (ui->verticalLayout_4)
+        ui->verticalLayout_4->insertWidget(0, _trackerFilterEdit);
+    connect(_trackerFilterEdit, &QLineEdit::textChanged, this, [this]() { applyTrackerTableFilter(); });
 
     _updateTimer = nullptr;
     _trackerTableCache = nullptr;
@@ -114,6 +146,8 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     core->getEventManager().subscribe<PluginUiTrackerTrees>("init_ui_tracker", &MainWindow::initTrackerDynamicUi, this);
     core->getEventManager().subscribe("initialize", &MainWindow::initialize, this);
     core->getEventManager().subscribe(name, "send_table", &MainWindow::initTrackerTable, this);
+    core->getEventManager().subscribe(name, AppLifecycleEvents::kControlTableUpdated,
+                                      &MainWindow::onControlTableUpdated, this);
 
     // Plugin UI subscriptions (all three types)
     core->getEventManager().subscribe(name, "engine_ui_ready",      &MainWindow::uiAddPluginEntry, this);
@@ -132,12 +166,16 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     core->getEventManager().subscribe(name, "tracker_set_inactive",    &MainWindow::uiSetPluginInactive, this);
     core->getEventManager().subscribe(name, "gen_plugin_activated",    &MainWindow::uiSetPluginActive, this);
     core->getEventManager().subscribe(name, "gen_plugin_deactivated",  &MainWindow::uiSetPluginInactive, this);
+    core->getEventManager().subscribe(name, AppUiEvents::kStatusMessage, &MainWindow::uiSetStatusMessage, this);
+    core->getEventManager().subscribe(name, AppShutdownEvents::kReleaseUiInputCapture,
+                                      &MainWindow::releaseUiInputCapture, this);
 
     // Button connections
     connect(ui->newSetupMenuButton,    &QAction::triggered,  this, &MainWindow::onNewFileClicked);
     connect(ui->saveAsSetupMenuButton,   &QAction::triggered,  this, &MainWindow::onSaveFileClicked);
     connect(ui->action_Render_API,    &QAction::triggered,  this, &MainWindow::setRenderApi);
     connect(ui->actionPreferences, &QAction::triggered, this, &MainWindow::openPreferences);
+    connect(ui->actionExit, &QAction::triggered, this, &QWidget::close);
     connect(ui->addPlugin,            &QPushButton::clicked, this, &MainWindow::addPlugin);
     connect(ui->deletePlugin,         &QPushButton::clicked, this, &MainWindow::removePlugin);
     connect(ui->reloadPlugin,         &QPushButton::clicked, this, &MainWindow::reloadPlugin);
@@ -168,18 +206,14 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     //     m_rcqVirtualCam.reset();
     // }
 
-    // --- OBS Virtual Camera — только если явно включено в настройках (иначе лишняя память/shm). ---
-    if (AppSettings::startVirtualCameraBridgeAtStartup()) {
-        m_obsVirtualCam = std::make_unique<ObsVirtualCamera>();
-        if (m_obsVirtualCam->startStream(640, 480, 30)) {
-            vw->setAfterFrameCallback([this, vw]() {
-                if (m_obsVirtualCam && m_obsVirtualCam->isStreaming()) {
-                    m_obsVirtualCam->pushFrameFromWidget(vw);
-                }
-            });
-        } else {
-            m_obsVirtualCam.reset();
-        }
+    // --- OBS Virtual Camera: viewport → shared memory for OBS Virtual Camera DirectShow filter. ---
+    m_obsVirtualCam = std::make_unique<ObsVirtualCamera>();
+    if (m_obsVirtualCam->startStream(640, 480, 30)) {
+        vw->setAfterFrameCallback([this, vw]() {
+            if (m_obsVirtualCam && m_obsVirtualCam->isStreaming()) {
+                m_obsVirtualCam->pushFrameFromWidget(vw);
+            }
+        });
     } else {
         m_obsVirtualCam.reset();
     }
@@ -275,6 +309,9 @@ void MainWindow::savePersistedUiLayout()
 void MainWindow::closeEvent(QCloseEvent* event)
 {
     savePersistedUiLayout();
+    // Stop engines before Qt destroys child widgets (WM_SIZE on bgfx HWND during teardown).
+    if (core)
+        beginApplicationShutdown(core);
     QMainWindow::closeEvent(event);
 }
 
@@ -299,9 +336,11 @@ void MainWindow::changeEvent(QEvent* event)
             if (entry.second.checkBox)
                 entry.second.checkBox->setText(tr("Active"));
         }
-        if (ui->tableTrackerWidget && ui->tableTrackerWidget->columnCount() >= 2) {
-            ui->tableTrackerWidget->setHorizontalHeaderLabels({tr("Parameter"), tr("Value")});
+        if (ui->tableTrackerWidget && ui->tableTrackerWidget->columnCount() >= 3) {
+            ui->tableTrackerWidget->setHorizontalHeaderLabels({tr("Source"), tr("Parameter"), tr("Value")});
         }
+        if (_trackerFilterEdit)
+            _trackerFilterEdit->setPlaceholderText(tr("Filter source or parameter…"));
     }
     QMainWindow::changeEvent(event);
 }
@@ -356,30 +395,35 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
             auto* ke = static_cast<QKeyEvent*>(event);
             if (!ke->isAutoRepeat()) {
                 std::lock_guard<std::mutex> lk(keyboardState_->mutex);
-                const int qtKey = ke->key();
-                if (qtKey != 0 && qtKey != Qt::Key_unknown)
-                    keyboardState_->keysHeldQt.insert(qtKey);
 #ifdef _WIN32
                 const unsigned vk = static_cast<unsigned>(ke->nativeVirtualKey());
                 if (vk != 0)
-                    keyboardState_->keysHeldNative.insert(static_cast<int>(vk));
+                    keyboardState_->keysHeldVk.insert(static_cast<int>(vk));
 #endif
             }
         } else if (event->type() == QEvent::KeyRelease) {
             auto* ke = static_cast<QKeyEvent*>(event);
             if (!ke->isAutoRepeat()) {
                 std::lock_guard<std::mutex> lk(keyboardState_->mutex);
-                const int qtKey = ke->key();
-                keyboardState_->keysHeldQt.erase(qtKey);
 #ifdef _WIN32
                 const unsigned vk = static_cast<unsigned>(ke->nativeVirtualKey());
                 if (vk != 0)
-                    keyboardState_->keysHeldNative.erase(static_cast<int>(vk));
+                    keyboardState_->keysHeldVk.erase(static_cast<int>(vk));
 #endif
             }
         }
     }
     return false;
+}
+
+void MainWindow::releaseUiInputCapture()
+{
+    if (auto* qa = qobject_cast<QApplication*>(QCoreApplication::instance()))
+        qa->removeEventFilter(this);
+    keyboardState_.reset();
+    if (_updateTimer) {
+        _updateTimer->stop();
+    }
 }
 
 void MainWindow::initialize() {
@@ -507,13 +551,9 @@ void MainWindow::uiAddPluginEntry(PluginUIInfo info) {
         return;
     }
 
-    // Choose background color by type
-    QColor bgColor;
-    switch (info.type) {
-        case PluginUIType::Engine:  bgColor = QColor(255, 250, 205); break; // light yellow (lemonchiffon)
-        case PluginUIType::Tracker: bgColor = QColor(198, 239, 206); break; // light green
-        case PluginUIType::Generic: bgColor = QColor(255, 205, 210); break; // light red/pink
-    }
+    // Choose background color by type (subtle tint of the active theme)
+    const QPalette& themePal = ui->pluginsToolBox->palette();
+    const QColor bgColor = uiTabCategoryColor(pluginUiTypeToTabCategory(info.type), themePal);
 
     // Build the page widget
     QWidget* widget = new QWidget;
@@ -526,23 +566,24 @@ void MainWindow::uiAddPluginEntry(PluginUIInfo info) {
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(4);
 
-    // Display name (shortened path)
-    QString displayName = QString::fromStdString(info.name);
-    QFileInfo fi(displayName);
-    if (fi.exists() || displayName.contains('/') || displayName.contains('\\')) {
-        displayName = fi.fileName(); // show only filename
-    }
+    // Display name + description (path kept only as widget property)
+    const QString displayName = QString::fromStdString(info.name);
+    const QString description = QString::fromStdString(info.description);
+
     QLabel* nameLabel = new QLabel("<b>" + displayName + "</b>");
     nameLabel->setWordWrap(true);
     layout->addWidget(nameLabel);
 
-    // Full path in smaller text
-    QLabel* pathLabel = new QLabel(QString::fromStdString(info.path));
-    pathLabel->setWordWrap(true);
-    QFont smallFont = pathLabel->font();
-    smallFont.setPointSize(smallFont.pointSize() - 1);
-    pathLabel->setFont(smallFont);
-    layout->addWidget(pathLabel);
+    if (!description.isEmpty()) {
+        QLabel* descLabel = new QLabel(description);
+        descLabel->setWordWrap(true);
+        QFont smallFont = descLabel->font();
+        smallFont.setPointSize(smallFont.pointSize() - 1);
+        descLabel->setFont(smallFont);
+        layout->addWidget(descLabel);
+    }
+
+    nameLabel->setToolTip(QString::fromStdString(info.path));
 
     // Checkbox for enable/disable
     QCheckBox* checkBox = new QCheckBox(tr("Active"));
@@ -559,26 +600,18 @@ void MainWindow::uiAddPluginEntry(PluginUIInfo info) {
         connect(checkBox, &QCheckBox::toggled, this,
                 [this, path = info.path, checkBox](bool checked) {
             if (checked) {
-                // Exclusive: deactivate other loaded engines (вкладки + выгрузка DLL)
+                // Только activate: EngineManager сам выгружает другие загруженные движки.
                 for (QCheckBox* cb : engineCheckboxes) {
                     if (cb != checkBox && cb->isChecked()) {
-                        std::string prevPath;
-                        for (const auto& [p, ent] : pluginPageEntries) {
-                            if (ent.checkBox == cb && ent.type == PluginUIType::Engine) {
-                                prevPath = p;
-                                break;
-                            }
-                        }
                         cb->blockSignals(true);
                         cb->setChecked(false);
                         cb->blockSignals(false);
-                        if (!prevPath.empty())
-                            core->getEventManager().sendMessage(
-                                AppMessage(name, "deactivate_engine_by_path", prevPath));
                     }
                 }
                 core->getEventManager().sendMessage(AppMessage(name, "activate_engine_by_path", path));
             } else {
+                core->getEventManager().getLogger().module("UI").info(
+                    "engine checkbox unchecked, deactivate: " + path);
                 core->getEventManager().sendMessage(AppMessage(name, "deactivate_engine_by_path", path));
             }
         });
@@ -610,8 +643,15 @@ void MainWindow::uiAddPluginEntry(PluginUIInfo info) {
     entry.checkBox = checkBox;
     pluginPageEntries[info.path] = entry;
 
-    // Add to toolbox (use display name as page title)
+    // Add to toolbox (display name as page title)
     ui->pluginsToolBox->addItem(widget, displayName);
+    deferRestylePluginsToolBox(ui->pluginsToolBox);
+
+    // Трекер мог активироваться до появления строки в «Плагины» — догоняем таблицу и галочку.
+    if (info.type == PluginUIType::Tracker) {
+        core->getEventManager().sendMessage(
+            AppMessage("TrackerManager", "tracker_ui_entry_ready", info.path));
+    }
 }
 
 void MainWindow::uiSetPluginActive(std::string path) {
@@ -650,6 +690,21 @@ void MainWindow::uiSetPluginInactive(std::string path) {
     cb->blockSignals(true);
     cb->setChecked(false);
     cb->blockSignals(false);
+}
+
+void MainWindow::uiSetStatusMessage(std::string text) {
+    if (QThread::currentThread() != qApp->thread()) {
+        QMetaObject::invokeMethod(this, [this, t = std::move(text)]() mutable {
+            uiSetStatusMessage(std::move(t));
+        }, Qt::QueuedConnection);
+        return;
+    }
+    if (!ui || !ui->statusbar)
+        return;
+    if (text.empty())
+        ui->statusbar->clearMessage();
+    else
+        ui->statusbar->showMessage(QString::fromStdString(text), 0);
 }
 
 void MainWindow::reloadPlugin() {
@@ -764,10 +819,37 @@ void MainWindow::uiRemovePluginEntry(std::string path) {
     }
 
     pluginPageEntries.erase(it);
+    deferRestylePluginsToolBox(ui->pluginsToolBox);
     qDebug() << "[UI] Plugin page removed:" << QString::fromStdString(path);
 }
 
 // ─── Tracker table ────────────────────────────────────────────────────────────
+
+void MainWindow::onControlTableUpdated(ControlTableUpdate update) {
+    if (isApplicationShuttingDown())
+        return;
+    _trackerKeySources = std::move(update.keySources);
+    if (update.table)
+        initTrackerTable(update.table);
+}
+
+void MainWindow::applyTrackerTableFilter() {
+    QTableWidget* tbl = ui->tableTrackerWidget;
+    if (!tbl)
+        return;
+    const QString needle = _trackerFilterEdit ? _trackerFilterEdit->text().trimmed() : QString();
+    const bool filterActive = !needle.isEmpty();
+    for (int row = 0; row < tbl->rowCount(); ++row) {
+        bool visible = true;
+        if (filterActive) {
+            const QString source = tbl->item(row, 0) ? tbl->item(row, 0)->text() : QString();
+            const QString param = tbl->item(row, 1) ? tbl->item(row, 1)->text() : QString();
+            visible = source.contains(needle, Qt::CaseInsensitive)
+                   || param.contains(needle, Qt::CaseInsensitive);
+        }
+        tbl->setRowHidden(row, !visible);
+    }
+}
 
 void MainWindow::initTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table) {
     if (!table) return;
@@ -777,36 +859,49 @@ void MainWindow::initTrackerTable(std::unordered_map<std::string, std::shared_pt
         }, Qt::QueuedConnection);
         return;
     }
-    if (table->empty()) return;
     _trackerTableCache = table;
 
     QTableWidget* tbl = ui->tableTrackerWidget;
+    if (table->empty()) {
+        tbl->setRowCount(0);
+        tbl->clear();
+        return;
+    }
+
     tbl->setUpdatesEnabled(false);
     tbl->clear();
     tbl->setRowCount(static_cast<int>(table->size()));
-    tbl->setColumnCount(2);
-    tbl->setHorizontalHeaderLabels({tr("Parameter"), tr("Value")});
+    tbl->setColumnCount(3);
+    tbl->setHorizontalHeaderLabels({tr("Source"), tr("Parameter"), tr("Value")});
 
     tbl->horizontalHeader()->setStretchLastSection(true);
     tbl->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    tbl->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    tbl->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    tbl->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     tbl->verticalHeader()->setVisible(false);
     tbl->setAlternatingRowColors(true);
     tbl->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     int row = 0;
     for (const auto& [key, ptr] : *table) {
+        std::string source;
+        if (auto it = _trackerKeySources.find(key); it != _trackerKeySources.end())
+            source = it->second;
+
+        tbl->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(source)));
+
         auto* nameItem = new QTableWidgetItem(QString::fromStdString(key));
-        tbl->setItem(row, 0, nameItem);
+        tbl->setItem(row, 1, nameItem);
 
         void* rawPtr = ptr.get();
         quint64 addr = reinterpret_cast<quint64>(rawPtr);
         nameItem->setData(Qt::UserRole, QVariant::fromValue<qulonglong>(addr));
 
-        tbl->setItem(row, 1, new QTableWidgetItem(""));
+        tbl->setItem(row, 2, new QTableWidgetItem(""));
         row++;
     }
     tbl->setUpdatesEnabled(true);
+    applyTrackerTableFilter();
 
     if (!_updateTimer) {
         _updateTimer = new QTimer(this);
@@ -825,7 +920,9 @@ void MainWindow::updateTrackerTable() {
     tbl->setUpdatesEnabled(false);
 
     for (int row = 0; row < tbl->rowCount(); ++row) {
-        QTableWidgetItem* nameItem = tbl->item(row, 0);
+        if (tbl->isRowHidden(row))
+            continue;
+        QTableWidgetItem* nameItem = tbl->item(row, 1);
         if (!nameItem) continue;
 
         QVariant var = nameItem->data(Qt::UserRole);
@@ -856,10 +953,10 @@ void MainWindow::updateTrackerTable() {
             valueStr = "Err";
         }
 
-        QTableWidgetItem* valItem = tbl->item(row, 1);
+        QTableWidgetItem* valItem = tbl->item(row, 2);
         if (!valItem) {
             valItem = new QTableWidgetItem(valueStr);
-            tbl->setItem(row, 1, valItem);
+            tbl->setItem(row, 2, valItem);
         } else {
             if (valItem->text() != valueStr)
                 valItem->setText(valueStr);
@@ -907,25 +1004,41 @@ void MainWindow::setControlsTable(std::unordered_map<std::string, std::string> t
 void MainWindow::initDynamicUi(PluginUiEngineTrees submission) {
     if (!submission.pages)
         return;
-    // BlockingQueuedConnection: build tabs while the engine DLL is still mapped.
-    // QueuedConnection allowed deactivate/unload to run before this lambda executed,
-    // leaving UiRenderer callbacks pointing at freed DLL memory (SIGSEGV).
-    QMetaObject::invokeMethod(this,
-        [this, submission = std::move(submission)]() mutable {
-            if (!submission.pages)
-                return;
-            if (!lastRenderedEngineLibraryPath.empty()
-                && lastRenderedEngineLibraryPath != submission.libraryPath) {
-                removeTabsOwnedByLibraryPath(ui->leftPanel, lastRenderedEngineLibraryPath);
-            }
-            lastRenderedEngineLibraryPath = submission.libraryPath;
-            removeTabsOwnedByLibraryPath(ui->leftPanel, submission.libraryPath);
-            const std::string pathTag = submission.libraryPath;
-            for (size_t i = 0; i < submission.pages->size(); ++i) {
-                auto root = std::make_shared<RUI::UiPage>((*submission.pages)[i]);
-                UiRenderer::renderToTabWidget(root, ui->leftPanel, pathTag);
-            }
-        }, Qt::BlockingQueuedConnection);
+
+    if (QThread::currentThread() == thread()) {
+        // Called via dispatchImmediately from the GUI thread (TesterV1 buildRoot path).
+        // Execute inline — no cross-thread invoke needed and no risk of async queue deadlock.
+        if (!lastRenderedEngineLibraryPath.empty()
+            && lastRenderedEngineLibraryPath != submission.libraryPath) {
+            removeTabsOwnedByLibraryPath(ui->leftPanel, lastRenderedEngineLibraryPath);
+        }
+        lastRenderedEngineLibraryPath = submission.libraryPath;
+        removeTabsOwnedByLibraryPath(ui->leftPanel, submission.libraryPath);
+        const std::string pathTag = submission.libraryPath;
+        for (size_t i = 0; i < submission.pages->size(); ++i) {
+            auto root = std::make_shared<RUI::UiPage>((*submission.pages)[i]);
+            UiRenderer::renderToTabWidget(root, ui->leftPanel, pathTag, UiTabCategory::Engine);
+        }
+    } else {
+        if (isApplicationShuttingDown())
+            return;
+        QMetaObject::invokeMethod(this,
+            [this, submission = std::move(submission)]() mutable {
+                if (!submission.pages)
+                    return;
+                if (!lastRenderedEngineLibraryPath.empty()
+                    && lastRenderedEngineLibraryPath != submission.libraryPath) {
+                    removeTabsOwnedByLibraryPath(ui->leftPanel, lastRenderedEngineLibraryPath);
+                }
+                lastRenderedEngineLibraryPath = submission.libraryPath;
+                removeTabsOwnedByLibraryPath(ui->leftPanel, submission.libraryPath);
+                const std::string pathTag = submission.libraryPath;
+                for (size_t i = 0; i < submission.pages->size(); ++i) {
+                    auto root = std::make_shared<RUI::UiPage>((*submission.pages)[i]);
+                    UiRenderer::renderToTabWidget(root, ui->leftPanel, pathTag, UiTabCategory::Engine);
+                }
+            }, Qt::QueuedConnection);
+    }
 }
 
 void MainWindow::updateResourceLabels()
@@ -1005,21 +1118,23 @@ void MainWindow::updateResourceLabels()
 }
 
 void MainWindow::initTrackerDynamicUi(PluginUiTrackerTrees submission) {
-    if (!submission.trees)
+    if (!submission.pages || submission.pages->empty())
+        return;
+    if (isApplicationShuttingDown())
         return;
     QMetaObject::invokeMethod(this,
         [this, submission = std::move(submission)]() mutable {
-            if (!submission.trees)
+            if (!submission.pages || submission.pages->empty())
                 return;
             removeTabsOwnedByLibraryPath(ui->rightPanel, submission.libraryPath);
             const std::string pathTag = submission.libraryPath;
-            for (const auto& [tabTitle, page] : *submission.trees) {
-                (void)tabTitle;
+            for (const RUI::UiPage& page : *submission.pages) {
                 UiRenderer::renderToTabWidget(std::make_shared<RUI::UiPage>(page),
                                               ui->rightPanel,
-                                              pathTag);
+                                              pathTag,
+                                              UiTabCategory::Tracker);
             }
-        }, Qt::BlockingQueuedConnection);
+        }, Qt::QueuedConnection);
 }
 
 void MainWindow::connectFramesToViewport(std::shared_ptr<renderQueue> queuePtr) {}

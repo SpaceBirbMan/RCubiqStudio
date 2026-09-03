@@ -23,7 +23,7 @@ void spoutNotifyEngineDeviceReset() {}
 #endif
 #endif
 
-#ifdef SPOUT_IMPL_DX11
+#ifdef SPOUT_IMPL_DX11 // ОПА ЗДРАСТЕ! А ЗАЧЕМ!?
 
 namespace {
 
@@ -150,7 +150,7 @@ void spoutAfterRenderTick(IDataBus* bus, void* hostHwnd, int viewportW, int view
 
 #else // no SpoutDX/SpoutDX.h — проект без SDK
 
-void spoutNotifyEngineDeviceReset() {}
+void spoutNotifyEngineDeviceReset() {} // они пустые, лол
 
 void spoutAfterRenderTick(IDataBus*, void*, int, int) {}
 

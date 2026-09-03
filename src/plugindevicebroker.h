@@ -1,7 +1,7 @@
 #ifndef PLUGINDEVICEBROKER_H
 #define PLUGINDEVICEBROKER_H
 
-#include "misc.h"
+#include "rcqapi.h"
 #include <memory>
 
 class DeviceManager;
@@ -18,6 +18,7 @@ public:
     void setDeviceManager(DeviceManager* dm) noexcept { dm_ = dm; }
 
     std::vector<PluginDeviceDescriptor> listDevices() override;
+    std::vector<PluginDeviceDescriptor> listAudioCaptureDevices() override;
     IAudioCaptureStream* openAudioCapture(const std::string& deviceId) override;
 
 private:

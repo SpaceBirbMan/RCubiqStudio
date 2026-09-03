@@ -10,6 +10,7 @@
 #include <QString>
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -105,6 +106,49 @@ std::string utc_timestamp_for_filename()
     return oss.str();
 }
 
+std::string format_timestamp_utc()
+{
+    const auto t = std::time(nullptr);
+    std::tm tm{};
+#ifdef _WIN32
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S UTC");
+    return oss.str();
+}
+
+std::string format_timestamp_local()
+{
+    const auto t = std::time(nullptr);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S local");
+    return oss.str();
+}
+
+std::string epoch_millis_string()
+{
+    using clock = std::chrono::system_clock;
+    const auto now = clock::now();
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    return std::to_string(ms);
+}
+
+std::string crash_timestamp_header()
+{
+    return std::string("timestamp_utc=") + format_timestamp_utc() + '\n'
+         + "timestamp_local=" + format_timestamp_local() + '\n'
+         + "epoch_ms=" + epoch_millis_string() + '\n';
+}
+
 #ifdef _WIN32
 std::wstring utf8_to_wide(const std::string& u8)
 {
@@ -160,7 +204,9 @@ std::string write_crash_log_impl(const char* kind, const std::string& extra, boo
     const std::string fname = "crash_" + utc_timestamp_for_filename() + "_" + kind + ".log";
     const std::string path = g_logs_dir + '/' + fname;
 
-    const std::string header = std::string("crash log\nkind=") + kind + '\n' + extra + "\n\nStack trace:\n";
+    const std::string header = std::string("crash log\n")
+        + crash_timestamp_header()
+        + "kind=" + kind + '\n' + extra + "\n\nStack trace:\n";
 
     if (FILE* primary = std::fopen(path.c_str(), "wb")) {
         std::fwrite(header.data(), 1, header.size(), primary);

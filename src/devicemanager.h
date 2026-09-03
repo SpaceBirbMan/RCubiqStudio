@@ -12,7 +12,6 @@
 
 // модули для обработки действий с устройств (типа, кастом HID не всем надо)?
 
-// TODO: Сделать обновление при переподключении
 template<typename T>
 class DeviceDataBus {
 private:
@@ -59,6 +58,9 @@ public:
     std::vector<HidDeviceInfo> enumerateHidDevices(unsigned short vid = 0, unsigned short pid = 0);
     /// id и отображаемое имя зарегистрированных в менеджере устройств.
     std::vector<std::pair<std::string, std::string>> enumerateRegisteredDevices() const;
+
+    /// Re-scan cameras/HID/audio and broadcast `devices_changed` to plugins/UI.
+    void refreshAllDevices();
 
     // virtual camera
     // spout viewport

@@ -1,4 +1,7 @@
 #include "devicemanager.h"
+#include "keyboardhook.h"
+#include "rcqapi.h"
+#include "consts.h"
 #include "plugindevicebroker.h"
 #include <any>
 #include <string>
@@ -120,18 +123,27 @@ DeviceManager::DeviceManager(AppCore *core)
 
     this->acptr->getEventManager().subscribe(name, "initialize", &DeviceManager::initialize, this);
     this->acptr->getEventManager().subscribe(name, "get_video_devices_request", &DeviceManager::sendVideoDevices, this);
+    this->acptr->getEventManager().subscribe(name, "refresh_devices", &DeviceManager::refreshAllDevices, this);
     this->acptr->getEventManager().subscribe(name, "activate_camera", &DeviceManager::activateCamera, this);
     this->acptr->getEventManager().subscribe(name, "start_hid_listeners", &DeviceManager::startHid, this);
-    this->acptr->getEventManager().subscribe(name, "stop_hid_listeners", &DeviceManager::stopHid, this);
+    this->acptr->getEventManager().subscribe(name, AppShutdownEvents::kStopHidListeners, &DeviceManager::stopHid, this);
 }
 
 void DeviceManager::sendVideoDevices()
 {
-    std::vector<CameraInfo> tmp = this->cameras = enumerateCameras(10);
-    acptr->getEventManager().sendMessage(AppMessage(name, "get_video_devices_respond", tmp));
+    refreshAllDevices();
 }
 
-DeviceManager::~DeviceManager() = default;
+void DeviceManager::refreshAllDevices()
+{
+    cameras = enumerateCameras(10);
+    acptr->getEventManager().sendMessage(
+        AppMessage(name, AppLifecycleEvents::kDevicesChanged, cameras));
+    acptr->getEventManager().sendMessage(
+        AppMessage(name, "get_video_devices_respond", cameras));
+}
+
+DeviceManager::~DeviceManager() { stopHid(); }
 
 bool DeviceManager::registerDevice(DevicePtr dev)
 {
@@ -151,65 +163,62 @@ bool DeviceManager::registerDevice(DevicePtr dev)
 
 void DeviceManager::startHid()
 {
-    std::cout << "Disabled for debugging purposes\n";
-    // const std::string id = "os:keyboard";
+    const std::string id = "os:keyboard";
 
-    // std::unique_lock<std::mutex> lock(mtx_);
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (devices_.count(id) || hidRunning_.load())
+        return;
 
-    // if (devices_.count(id))
-    // {
-    //     return;
-    // }
+    auto dev = std::make_shared<OsInputDevice>();
+    devices_[id] = dev;
 
-    // auto dev = std::make_shared<OsInputDevice>();
-    // devices_[id] = dev;
-    // auto *bus = new DataBus<std::vector<uint8_t>>();
-    // deviceDataBuses_[id] = bus;
+    std::shared_ptr<KeyboardKeysState> keyboardState;
+    try {
+        auto& slot = acptr->getEventManager().getBusPtr()->getData("keyboard_state");
+        keyboardState = std::any_cast<std::shared_ptr<KeyboardKeysState>>(slot);
+    } catch (...) {
+        devices_.erase(id);
+        return;
+    }
 
-    // dev->setDataCallback([bus](const std::vector<uint8_t> &data)
-    //                      { bus->push(data); });
+    dev->setDataCallback([keyboardState](const std::vector<uint8_t>& data) {
+        if (keyboardState)
+            KeyboardHook::applyPacket(*keyboardState, data);
+    });
 
-    // if (!dev->open())
-    // {
-    //     std::cerr << "Failed to open os keyboard listener\n";
-    //     devices_.erase(id);
-    //     deviceDataBuses_.erase(id);
-    //     delete bus;
-    //     return;
-    // }
+    if (!dev->open()) {
+        std::cerr << "Failed to open global keyboard/mouse hook\n";
+        devices_.erase(id);
+        return;
+    }
 
-    // hidRunning_ = true;
-
-    // hidThread_ = std::thread([this, bus]()
-    //                          {
-    //     while (hidRunning_) {
-    //         std::vector<uint8_t> packet {};
-    //         bus->try_pop(packet);
-
-    //         if (packet.size() < 5) {
-    //             continue;
-    //         }
-
-    //         uint8_t type = packet[0];
-    //         uint16_t keycode =
-    //             static_cast<uint16_t>(packet[1]) |
-    //             (static_cast<uint16_t>(packet[2]) << 8);
-
-    //         uint16_t modifiers =
-    //             static_cast<uint16_t>(packet[3]) |
-    //             (static_cast<uint16_t>(packet[4]) << 8);
-
-    //         std::cout
-    //             << "KEY "
-    //             << (type == EVENT_KEY_PRESSED ? "DOWN " : "UP ")
-    //             << "code=" << keycode
-    //             << " mod=" << modifiers
-    //             << std::endl;
-    //     } });
+    hidRunning_ = true;
+    std::cerr << "Global keyboard/mouse hook active (libuiohook)\n";
 }
 
 void DeviceManager::stopHid()
 {
+    if (!hidRunning_.load(std::memory_order_acquire))
+        return;
+
+    std::shared_ptr<Device> dev;
+    {
+        std::unique_lock<std::mutex> lock(mtx_);
+        const std::string id = "os:keyboard";
+        auto it = devices_.find(id);
+        if (it != devices_.end()) {
+            dev = it->second;
+            devices_.erase(it);
+        }
+        hidRunning_ = false;
+    }
+
+    if (!dev)
+        return;
+
+    dev->setDataCallback(nullptr);
+    dev->close();
+    std::cerr << "Global keyboard/mouse hook stopped (libuiohook)\n";
 }
 
 void DeviceManager::activateCamera(std::string name)
@@ -286,6 +295,7 @@ void DeviceManager::initialize()
             impl->setDeviceManager(this);
     } catch (...) {
     }
+    this->acptr->getEventManager().sendMessage(AppMessage(name, "start_hid_listeners", 0));
 }
 
 #ifdef _WIN32

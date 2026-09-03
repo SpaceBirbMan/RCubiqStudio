@@ -9,9 +9,10 @@
 #include <QFileDialog>
 #include <QTabWidget>
 #include "devices.h"
-#include <QLabel>
+#include <QLineEdit>
 #include <QCheckBox>
 #include <unordered_map>
+#include <QLabel>
 #include <memory>
 
 class QCloseEvent;
@@ -85,6 +86,7 @@ private:
     void setRenderApi();
     void initialize();
     void initTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table);
+    void onControlTableUpdated(ControlTableUpdate update);
     void updateTrackerTable();
 
     // Plugin UI (all types)
@@ -92,6 +94,8 @@ private:
     void uiRemovePluginEntry(std::string path);
     void uiSetPluginActive(std::string path);
     void uiSetPluginInactive(std::string path);
+    void uiSetStatusMessage(std::string text);
+    void releaseUiInputCapture();
 
     /// Find toolbox entry when notify path differs from UI key (e.g. Windows case / relative vs absolute).
     std::unordered_map<std::string, PluginPageEntry>::iterator findPluginPageEntryIt(const std::string& path);
@@ -108,6 +112,9 @@ private:
 
     QTimer* _updateTimer;
     std::unordered_map<std::string, std::shared_ptr<void>> *_trackerTableCache;
+    QLineEdit* _trackerFilterEdit = nullptr;
+    std::unordered_map<std::string, std::string> _trackerKeySources;
+    void applyTrackerTableFilter();
 
     std::shared_ptr<renderQueue> frameQueue = nullptr;
 

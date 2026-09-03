@@ -12,7 +12,9 @@
 #include <mutex>
 #include <algorithm>
 #include "ieventmanager.h"
-#include "misc.h"
+#include "consts.h"
+#include "rcqapi.h"
+#include "logger.h"
 
 using namespace std;
 
@@ -34,7 +36,15 @@ public:
           })
     {
         messages.setProcessor(&(this->processor));
+        subscribe(LoggerEvents::kReceiver, LoggerEvents::kLogWrite,
+                  [this](const std::any& data) {
+                      if (data.type() == typeid(LogRecord))
+                          logger.submit(std::any_cast<LogRecord>(data));
+                  });
     }
+
+    Logger& getLogger() { return logger; }
+    const Logger& getLogger() const { return logger; }
 
     // void subscribe(const std::string& msg, std::function<void(const std::any&)> fn) {
     //     subscribers[msg] = std::move(fn);
@@ -54,18 +64,42 @@ public:
 
     void unsubscribeReceiver(const std::string& receiver) override
     {
+        size_t removed = 0;
         std::lock_guard<std::mutex> lock(subscribers_mutex_);
         for (auto it = subscribers_by_message_.begin(); it != subscribers_by_message_.end(); ) {
             auto& bucket = it->second;
+            const size_t before = bucket.size();
             bucket.erase(
                 std::remove_if(bucket.begin(), bucket.end(),
                     [&](const subStruct& s) { return s.receiver == receiver; }),
                 bucket.end());
+            removed += before - bucket.size();
             if (bucket.empty())
                 it = subscribers_by_message_.erase(it);
             else
                 ++it;
         }
+        if (removed > 0) {
+            logger.module("EventManager").info(
+                "unsubscribeReceiver: '" + receiver + "' removed "
+                + std::to_string(removed) + " callback(s)");
+        }
+    }
+
+    /// Диагностика: receiver id подписчиков на топик (для отладки use-after-unload DLL).
+    std::string subscriberReceiversForTopic(const std::string& msg) const
+    {
+        std::lock_guard<std::mutex> lock(subscribers_mutex_);
+        const auto it = subscribers_by_message_.find(msg);
+        if (it == subscribers_by_message_.end())
+            return "{}";
+        std::string out;
+        for (const auto& s : it->second) {
+            if (!out.empty())
+                out += ", ";
+            out += s.receiver;
+        }
+        return "{" + out + "}";
     }
 
     EventQueue& getQueue(); // todo: Возможно требуется запретить запрос самой очереди
@@ -77,8 +111,12 @@ public:
 
     void dispatchImmediately(const AppMessage& message) override;
 
-    /// Block until the message queue is empty and no callback is running (or timeout). For shutdown ordering.
-    void waitUntilQuiet(std::chrono::milliseconds timeout);
+    /// Process every message already enqueued. Call from inside a handler on the worker thread
+    /// when later steps must wait for side effects of sendMessage() issued earlier in the same flow.
+    void drainPendingMessages();
+
+    /// Block until the queue is empty and no callback is running. For shutdown from non-handler threads.
+    void waitUntilIdle();
 
 private:
 
@@ -89,6 +127,7 @@ private:
 
     MessageProcessor processor;
     DirectSender directSender = DirectSender(); // TODO: Убрать
+    Logger logger;
     DataBus* bus = new DataBus();
 
     void notifyModules();

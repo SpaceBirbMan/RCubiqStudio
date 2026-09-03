@@ -2,8 +2,9 @@
 #include "appsettings.h"
 #include "filetypes.h"
 #include "shorts.h"
-#include "misc.h"
+#include "rcqapi.h"
 #include "consts.h"
+#include "logger.h"
 #include <functional>
 #include <filesystem>
 
@@ -24,12 +25,16 @@ DataManager::DataManager(AppCore* acptr) {
     IDataBus* bus = acptr->getEventManager().getBusPtr();
     bus->registerData("plugin_file_broker", static_cast<IPluginFileBroker*>(pluginFileBroker_.get()));
     bus->registerData("plugin_device_broker", static_cast<IPluginDeviceBroker*>(pluginDeviceBroker_.get()));
+    bus->registerData("app_logger", static_cast<IAppLogger*>(&acptr->getEventManager().getLogger()));
 
-    acptr->setPersistPipeline([this](const std::string& dllPathHint) {
-        this->appCorePtr->getEventManager().dispatchImmediately(
-            AppMessage(this->name, AppLifecycleEvents::kPersistModules, dllPathHint));
-        this->cacheManager.pickCache();
-    });
+    acptr->setPersistCallbacks(
+        [this](const std::string& dllPathHint) {
+            this->appCorePtr->getEventManager().dispatchImmediately(
+                AppMessage(this->name, AppLifecycleEvents::kPersistModules, dllPathHint));
+        },
+        [this]() {
+            this->cacheManager.pickCache();
+        });
 
     acptr->getEventManager().subscribe(name, "initialize", &DataManager::initialize, this);
     acptr->getEventManager().subscribe(name, "ask_cache", &DataManager::tryToLoadCache, this);
@@ -118,17 +123,23 @@ void DataManager::resolveTracker(Meta meta) {
 
 void DataManager::resolveFuncTable(LibMeta meta) {
 
-    std::cout << "Started resolving" << std::endl;
+    auto log = appCorePtr->getEventManager().getLogger().module(name);
+    log.info("resolveFuncTable: begin " + meta.path);
+    appCorePtr->getEventManager().sendMessage(
+        AppMessage("Core", AppUiEvents::kStatusMessage, "Loading DLL: " + meta.path));
     // TODO: а если два движка откроется?
     auto it = libsPool.find(meta.path);
     if (it == libsPool.end()) {
         try {
+            log.info("resolveFuncTable: loading library from disk");
             auto lib = std::make_shared<DynamicLibrary>(meta.path);
             auto result = libsPool.emplace(meta.path, lib);
             it = result.first;
+            log.info("resolveFuncTable: library loaded");
         } catch (const std::exception& e) {
             std::cerr << "[DataManager] resolveFuncTable: failed to load library '"
                       << meta.path << "': " << e.what() << std::endl;
+            log.error(std::string("resolveFuncTable: load failed: ") + e.what());
             appCorePtr->getEventManager().sendMessage(
                 AppMessage(name, "engine_resolving_respond", std::vector<void*>{})
             );
@@ -155,6 +166,7 @@ void DataManager::resolveFuncTable(LibMeta meta) {
         }
     }
 
+    log.info("resolveFuncTable: symbols resolved, responding");
     appCorePtr->getEventManager().sendMessage(
         AppMessage(name, "engine_resolving_respond", ptrs)
     );

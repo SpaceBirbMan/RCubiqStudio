@@ -38,6 +38,10 @@ public:
     static bool traceProgramFlow();
     static void setTraceProgramFlow(bool enabled);
 
+    /// Write application log lines to studio.log in plugins_cache.
+    static bool logToFile();
+    static void setLogToFile(bool enabled);
+
     static bool ignorePluginVersionCheck();
     static void setIgnorePluginVersionCheck(bool on);
 
@@ -72,8 +76,8 @@ public:
 
     static QStringList cacheJsonCandidatePaths();
 
-    /// Абсолютный путь к записываемому session cache (каталог создаётся при необходимости).
-    static QString writableSessionCachePath();
+    /// Абсолютный путь к записываемому cache.json (каталог создаётся при необходимости).
+    static QString writableCacheJsonPath();
 
     /// Корень каталога `plugins_cache` с правом записи (рядом с exe при возможности, иначе AppLocalData).
     static QString writablePluginsCacheDirectory();

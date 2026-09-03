@@ -2,7 +2,7 @@
 #include "appsettings.h"
 #include "eventmanager.h"
 #include "bushandle.h"
-#include "misc.h"
+#include "rcqapi.h"
 #include <deque>
 #include <memory>
 #include <string>
@@ -89,13 +89,35 @@ void AppCore::sendDataBusP() {
     this->eventManager.sendMessage(AppMessage(name, "send_dbus_p", this->eventManager.getBusPtr()));
 }
 
-void AppCore::setPersistPipeline(std::function<void(const std::string&)> fn)
+void AppCore::setPersistCallbacks(
+    std::function<void(const std::string& dllPathHint)> pluginModulesFn,
+    std::function<void()> sessionCacheFn)
 {
-    persistPipeline_ = std::move(fn);
+    persistPluginModulesFn_ = std::move(pluginModulesFn);
+    writeSessionCacheFn_ = std::move(sessionCacheFn);
+}
+
+void AppCore::persistPluginModules(const std::string& dllPathHint)
+{
+    if (persistPluginModulesFn_)
+        persistPluginModulesFn_(dllPathHint);
+}
+
+void AppCore::writeSessionCache()
+{
+    if (writeSessionCacheFn_)
+        writeSessionCacheFn_();
 }
 
 void AppCore::persistPluginsAndWriteSessionCache(const std::string& dllPathHint)
 {
-    if (persistPipeline_)
-        persistPipeline_(dllPathHint);
+    if (dllPathHint.empty()) {
+        // Shutdown / full save: host state first (activeEnginePath), then plugins, then finalize.
+        writeSessionCache();
+        persistPluginModules(dllPathHint);
+        writeSessionCache();
+    } else {
+        persistPluginModules(dllPathHint);
+        writeSessionCache();
+    }
 }

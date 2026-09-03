@@ -1,8 +1,12 @@
 #include "otherplugins.h"
 #include "appcore.h"
 #include "consts.h"
+#include "logger.h"
+#include "pluginmeta.h"
 
-OtherPlugins::OtherPlugins(AppCore *appcore) {
+OtherPlugins::OtherPlugins(AppCore *appcore)
+    : log_(appcore->getEventManager().getLogger().registerModule(name))
+{
     this->core = appcore;
 
     core->getEventManager().subscribe(name, "initialize", &OtherPlugins::initialize, this);
@@ -46,8 +50,7 @@ void OtherPlugins::postInitialize() {
         if (!activePluginPaths.count(path)) {
             // Plugin is registered but inactive — just notify UI with empty name (path as fallback)
             PluginUIInfo info;
-            info.name = path;
-            info.path = path;
+            fillPluginUiInfo(info, path);
             info.type = PluginUIType::Generic;
             core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_ready", info));
         }
@@ -70,8 +73,11 @@ void OtherPlugins::addPaths(std::vector<std::string> paths) {
         if (it != plugins.end()) {
             it->second.instance->setLibraryPath(path);
             PluginUIInfo info;
-            info.name = it->second.instance->getName();
             info.path = path;
+            info.name = it->second.instance->getName();
+            const PluginDisplayMeta meta = readPluginDisplayMeta(path);
+            if (!meta.description.empty())
+                info.description = meta.description;
             info.type = PluginUIType::Generic;
             core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_ready", info));
             if (activePluginPaths.count(path))
@@ -83,8 +89,7 @@ void OtherPlugins::addPaths(std::vector<std::string> paths) {
         // Not loaded — only resolve when marked active (cache/session) or explicitly enabled via UI
         if (!activePluginPaths.count(path)) {
             PluginUIInfo info;
-            info.name = path;
-            info.path = path;
+            fillPluginUiInfo(info, path);
             info.type = PluginUIType::Generic;
             core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_ready", info));
             continue;
@@ -170,8 +175,7 @@ void OtherPlugins::registerPlugin(std::vector<void*> pointers) {
         activePluginPaths.insert(path);
 
         PluginUIInfo info;
-        info.name = plugin->getName();
-        info.path = path;
+        fillPluginUiInfo(info, path);
         info.type = PluginUIType::Generic;
         core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_ui_ready", info));
         core->getEventManager().sendMessage(AppMessage(name, "gen_plugin_activated", path));

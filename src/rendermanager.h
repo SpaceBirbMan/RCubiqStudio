@@ -6,7 +6,7 @@
 #include "appcore.h"
 
 #include <vector>
-#include "misc.h"
+#include "rcqapi.h"
 
 class RenderManager : public ICacheable
 {

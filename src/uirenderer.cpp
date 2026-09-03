@@ -6,6 +6,7 @@
 #include <QListWidget>
 #include <QDialog>
 #include <QStringListModel>
+#include <QCompleter>
 #include <QPainter>
 #include <QTimer>
 #include <QMouseEvent>
@@ -67,6 +68,73 @@ private:
     }
 
     QToolBox* m_tb = nullptr;
+};
+
+/// Host-owned bridge: wires RUI::UiToolBox to QToolBox without writing std::function into plugin DLL memory.
+class ToolBoxHostBridge final : public QObject {
+public:
+    ToolBoxHostBridge(QToolBox* tb, UiToolBox* rui)
+        : QObject(tb)
+        , m_tb(tb)
+        , m_rui(rui)
+    {
+        if (m_rui) {
+            m_rui->hostCtx = this;
+            m_rui->hostTitleHook = &ToolBoxHostBridge::titleHook;
+            m_rui->hostRebuildHook = &ToolBoxHostBridge::rebuildHook;
+        }
+    }
+
+    ~ToolBoxHostBridge() override {
+        if (m_rui) {
+            m_rui->hostCtx = nullptr;
+            m_rui->hostTitleHook = nullptr;
+            m_rui->hostRebuildHook = nullptr;
+        }
+    }
+
+    static void titleHook(void* ctx, size_t index) {
+        if (ctx)
+            static_cast<ToolBoxHostBridge*>(ctx)->applyTitle(index);
+    }
+
+    static void rebuildHook(void* ctx) {
+        if (ctx)
+            static_cast<ToolBoxHostBridge*>(ctx)->rebuildPages();
+    }
+
+private:
+    void applyTitle(size_t index) {
+        if (!m_tb || !m_rui)
+            return;
+        if (index >= m_rui->pages.size() || static_cast<int>(index) >= m_tb->count())
+            return;
+        m_tb->setItemText(static_cast<int>(index),
+                          QString::fromStdString(m_rui->pages[index].title));
+    }
+
+    void rebuildPages() {
+        if (!m_tb || !m_rui)
+            return;
+        while (m_tb->count() > 0) {
+            QWidget* w = m_tb->widget(0);
+            m_tb->removeItem(0);
+            if (w)
+                w->deleteLater();
+        }
+        for (const auto& page : m_rui->pages) {
+            QWidget* content = UiRenderer::renderContainer(page.content.get());
+            if (content) {
+                content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+                m_tb->addItem(content, QString::fromStdString(page.title));
+            }
+        }
+        configureQtToolBoxPageScrollAreas(m_tb);
+        m_tb->updateGeometry();
+    }
+
+    QToolBox* m_tb = nullptr;
+    UiToolBox* m_rui = nullptr;
 };
 
 } // namespace
@@ -243,8 +311,13 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
         le->setText(QString::fromStdString(in->value));
         if (in->inputType == HIDDENTEXT) le->setEchoMode(QLineEdit::Password);
         if (in->onTextChanged) {
-            QObject::connect(le, &QLineEdit::textChanged, [cb = in->onTextChanged](const QString& v){
-                cb(v.toStdString());
+            QObject::connect(le, &QLineEdit::textChanged, [in, cb = in->onTextChanged](const QString& v){
+                in->value = v.toStdString();
+                cb(in->value);
+            });
+        } else {
+            QObject::connect(le, &QLineEdit::textChanged, [in](const QString& v){
+                in->value = v.toStdString();
             });
         }
         QPointer<QLineEdit> lPtr = le;
@@ -304,6 +377,39 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
         QPointer<QProgressBar> pPtr = p;
         pb->onChange = [pPtr, pb]() { if(pPtr) { pPtr->setRange(pb->getMinValue(), pb->getMaxValue()); pPtr->setValue(pb->getValue()); } };
         result = p;
+    }
+    else if (auto* scb = dynamic_cast<UiSearchableComboBox*>(elem)) {
+        auto* box = new QComboBox;
+        box->setEditable(true);
+        box->setInsertPolicy(QComboBox::NoInsert);
+        box->lineEdit()->setPlaceholderText(QString::fromStdString(scb->filterHint));
+        for (const auto& it : scb->items)
+            box->addItem(QString::fromStdString(it));
+        box->setCurrentIndex(scb->currentIndex);
+        auto* model = new QStringListModel(box);
+        {
+            QStringList sl;
+            for (const auto& it : scb->items) sl << QString::fromStdString(it);
+            model->setStringList(sl);
+        }
+        auto* comp = new QCompleter(model, box);
+        comp->setCaseSensitivity(Qt::CaseInsensitive);
+        comp->setFilterMode(Qt::MatchContains);
+        comp->setCompletionMode(QCompleter::PopupCompletion);
+        box->setCompleter(comp);
+        if (scb->onSelect) {
+            QObject::connect(box, QOverload<int>::of(&QComboBox::currentIndexChanged), [cb = scb->onSelect](int v){ cb(v); });
+        }
+        QPointer<QComboBox> cPtr = box;
+        scb->onChange = [cPtr, scb]() {
+            if (!cPtr) return;
+            const int keep = cPtr->currentIndex();
+            cPtr->clear();
+            for (const auto& it : scb->items)
+                cPtr->addItem(QString::fromStdString(it));
+            cPtr->setCurrentIndex(keep);
+        };
+        result = box;
     }
     else if (auto* cbx = dynamic_cast<UiComboBox*>(elem)) {
         auto* box = new QComboBox;
@@ -1001,25 +1107,7 @@ QWidget* UiRenderer::renderToolBox(UiToolBox* toolbox) {
     }
     new ToolBoxPageStretcher(tb);
     configureQtToolBoxPageScrollAreas(tb);
-
-    QPointer<QToolBox> tbPtr = tb;
-    toolbox->onChange = [tbPtr, toolbox]() {
-        if (!tbPtr) return;
-        while (tbPtr->count() > 0) {
-            QWidget* w = tbPtr->widget(0);
-            tbPtr->removeItem(0);
-            if (w) w->deleteLater();
-        }
-        for (const auto& page : toolbox->pages) {
-            QWidget* content = UiRenderer::renderContainer(page.content.get());
-            if (content) {
-                content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-                tbPtr->addItem(content, QString::fromStdString(page.title));
-            }
-        }
-        configureQtToolBoxPageScrollAreas(tbPtr);
-        tbPtr->updateGeometry();
-    };
+    new ToolBoxHostBridge(tb, toolbox);
 
     return tb;
 }
@@ -1029,7 +1117,8 @@ QWidget* UiRenderer::renderToolBox(UiToolBox* toolbox) {
 ///////////////////////////////////////////////////////////////
 
 void UiRenderer::renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget,
-                                   const std::string& pluginLibraryPath) {
+                                   const std::string& pluginLibraryPath,
+                                   UiTabCategory category) {
     if (!root || !tabTarget) return;
 
     QWidget* content = renderPage(root.get());
@@ -1039,16 +1128,18 @@ void UiRenderer::renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tab
         tabTarget->insertTab(idx, content, QString::fromStdString(root->getTitle()));
         if (!pluginLibraryPath.empty())
             content->setProperty("plugin_library_path", QString::fromStdString(pluginLibraryPath));
+        setTabCategory(tabTarget, idx, category);
     }
 }
 
 void UiRenderer::renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget,
-                                   const std::string& pluginLibraryPath) {
+                                   const std::string& pluginLibraryPath,
+                                   UiTabCategory category) {
     if (!tabTarget) return;
 
     for (const auto& page : pages) {
         if (page) {
-            renderToTabWidget(page, tabTarget, pluginLibraryPath);
+            renderToTabWidget(page, tabTarget, pluginLibraryPath, category);
         }
     }
 }

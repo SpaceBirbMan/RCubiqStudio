@@ -645,6 +645,12 @@ public:
     std::function<void(int)> onSelect;
 };
 
+/// Editable combo with substring filter (QCompleter) for long item lists.
+class UiSearchableComboBox : public UiComboBox {
+public:
+    std::string filterHint = "Search…";
+};
+
 class UiInputField : public UiElement {
 public:
     std::string hint;
@@ -757,6 +763,14 @@ public:
 
     std::vector<Page> pages;
 
+    /// Tab label only — keeps focus in input fields inside the page.
+    std::function<void(size_t index)> onTitleChange;
+
+    /// Host-side Qt bridge (function pointers — safe across EXE/DLL; do not store host std::function here).
+    void* hostCtx = nullptr;
+    void (*hostTitleHook)(void* ctx, size_t index) = nullptr;
+    void (*hostRebuildHook)(void* ctx) = nullptr;
+
     UiToolBox() { resetName(); }
 
     void addPage(std::string title, std::shared_ptr<UiContainer> content) {
@@ -764,6 +778,24 @@ public:
     }
 
     void clearPages() { pages.clear(); }
+
+    /// Rebuild Qt tabs after pages changed (prefers host bridge when wired).
+    void notifyPagesChanged() {
+        if (hostRebuildHook && hostCtx)
+            hostRebuildHook(hostCtx);
+        else if (onChange)
+            onChange();
+    }
+
+    void setPageTitle(size_t index, std::string title) {
+        if (index >= pages.size())
+            return;
+        pages[index].title = std::move(title);
+        if (hostTitleHook && hostCtx)
+            hostTitleHook(hostCtx, index);
+        else if (onTitleChange)
+            onTitleChange(index);
+    }
 };
 
 // todo: Мб стоит подумать о вариантах передаваемых функций, как это сделано в

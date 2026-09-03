@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.16)
 
 project(Studio VERSION 0.1 LANGUAGES CXX)
 
-# cache.json, session_cache.json, plugins_cache и settings.ini рядом с exe (как в Debug portable).
 option(STUDIO_FORCE_ROOT_CACHE "Force portable cache/settings roots next to executable (Release-friendly)." ON)
 
 set(CPPTRACE_BUILD_SHARED OFF CACHE BOOL "" FORCE)
@@ -17,6 +16,8 @@ FetchContent_MakeAvailable(cpptrace)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
+
+set(STUDIO_DEPLOY_RUNTIME_POSTBUILD OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,11 +54,17 @@ file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
 set(STUDIO_EXPLICIT_SOURCES
     "${CMAKE_SOURCE_DIR}/src/appsettings.cpp"
     "${CMAKE_SOURCE_DIR}/src/settingsdialog.cpp"
+    "${CMAKE_SOURCE_DIR}/src/keyboardhook.cpp"
+    "${CMAKE_SOURCE_DIR}/src/appshutdown.cpp"
+    "${CMAKE_SOURCE_DIR}/src/devicehotplugnotifier.cpp"
 )
 set(_prj_filtered "")
 foreach(s IN LISTS PROJECT_SOURCES)
     get_filename_component(_leaf_name "${s}" NAME)
-    if(_leaf_name STREQUAL "appsettings.cpp" OR _leaf_name STREQUAL "settingsdialog.cpp")
+    if(_leaf_name STREQUAL "appsettings.cpp" OR _leaf_name STREQUAL "settingsdialog.cpp"
+       OR _leaf_name STREQUAL "keyboardhook.cpp"
+       OR _leaf_name STREQUAL "appshutdown.cpp"
+       OR _leaf_name STREQUAL "devicehotplugnotifier.cpp")
         continue()
     endif()
     list(APPEND _prj_filtered "${s}")
@@ -145,26 +152,57 @@ find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui)
 pkg_check_modules(HIDAPI REQUIRED IMPORTED_TARGET hidapi)
 pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 
-target_include_directories(Studio PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+target_include_directories(Studio PRIVATE
+    "${CMAKE_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-d")
+    if(WIN32)
+        set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-d")
+    else()
+        set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-linux-d"
+            CACHE PATH "bgfx install prefix (Debug)")
+    endif()
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-r")
+    if(WIN32)
+        set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-mingw64-r")
+    else()
+        set(BGFX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../bgfx/install-linux-r"
+            CACHE PATH "bgfx install prefix (Release)")
+    endif()
 endif()
 
 set(BIN_DIRS "${BGFX_ROOT}/bin")
 
 target_include_directories(Studio PRIVATE ${BGFX_ROOT}/include)
 target_link_directories(Studio PRIVATE ${BGFX_ROOT}/lib)
-set(UIOHOOK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libuiohook")
-add_library(uiohook SHARED IMPORTED)
-set_target_properties(uiohook PROPERTIES IMPORTED_IMPLIB
-    "${UIOHOOK_DIR}/Debug/libuiohook.dll.a" IMPORTED_LOCATION
-    "${UIOHOOK_DIR}/Debug/libuiohook.dll"
-    INTERFACE_INCLUDE_DIRECTORIES
-    "${UIOHOOK_DIR}/libuiohook/include" )
-target_link_libraries(Studio PRIVATE uiohook)
+
+if(WIN32)
+    set(UIOHOOK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libuiohook")
+    add_library(uiohook SHARED IMPORTED)
+    set_target_properties(uiohook PROPERTIES IMPORTED_IMPLIB
+        "${UIOHOOK_DIR}/Debug/libuiohook.dll.a" IMPORTED_LOCATION
+        "${UIOHOOK_DIR}/Debug/libuiohook.dll"
+        INTERFACE_INCLUDE_DIRECTORIES
+        "${UIOHOOK_DIR}/libuiohook/include")
+    target_link_libraries(Studio PRIVATE uiohook)
+else()
+    find_path(UIOHOOK_INCLUDE_DIR uiohook.h
+        HINTS "${CMAKE_CURRENT_SOURCE_DIR}/../libuiohook/libuiohook/include")
+    find_library(UIOHOOK_LIBRARY NAMES uiohook libuiohook
+        HINTS "${CMAKE_CURRENT_SOURCE_DIR}/../libuiohook")
+    if(UIOHOOK_INCLUDE_DIR AND UIOHOOK_LIBRARY)
+        add_library(uiohook SHARED IMPORTED)
+        set_target_properties(uiohook PROPERTIES
+            IMPORTED_LOCATION "${UIOHOOK_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${UIOHOOK_INCLUDE_DIR}")
+        target_link_libraries(Studio PRIVATE uiohook)
+        message(STATUS "uiohook: ${UIOHOOK_LIBRARY}")
+    else()
+        message(STATUS "uiohook not found — global keyboard hook disabled on this platform")
+    endif()
+endif()
 
 add_compile_definitions(BX_CONFIG_DEBUG=1)
 
@@ -187,7 +225,9 @@ target_link_libraries(
     ${OpenCV_LIBS}
 )
 
-target_link_libraries(Studio PRIVATE ws2_32)
+if(WIN32)
+    target_link_libraries(Studio PRIVATE ws2_32)
+endif()
 
 if(STUDIO_FORCE_ROOT_CACHE)
     message(STATUS "STUDIO_FORCE_ROOT_CACHE=ON: cache/settings/plugins_cache у каталога exe (включая Release)")
@@ -267,9 +307,13 @@ set_target_properties(Studio PROPERTIES
     ${BUNDLE_ID_OPTION}
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-    MACOSX_BUNDLE TRUE
-    WIN32_EXECUTABLE TRUE
 )
+if(APPLE)
+    set_target_properties(Studio PROPERTIES MACOSX_BUNDLE TRUE)
+endif()
+if(WIN32)
+    set_target_properties(Studio PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 
 include(GNUInstallDirs)
 install(TARGETS Studio

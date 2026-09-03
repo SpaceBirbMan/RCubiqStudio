@@ -117,8 +117,7 @@
     <property name="title">
      <string>File</string>
     </property>
-    <addaction name="newSetupMenuButton"/>
-    <addaction name="saveAsSetupMenuButton"/>
+    <addaction name="actionExit"/>
    </widget>
    <widget class="QMenu" name="menu_2">
     <property name="title">
@@ -169,7 +168,7 @@
    <widget class="QWidget" name="dockWidgetContents">
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QTabWidget" name="leftPanel">
+      <widget class="CategoryTabWidget" name="leftPanel">
        <property name="styleSheet">
         <string notr="true"/>
        </property>
@@ -237,12 +236,15 @@
    <widget class="QWidget" name="dockWidgetContents_3">
     <layout class="QVBoxLayout" name="verticalLayout_9">
      <item>
-      <widget class="QTabWidget" name="rightPanel">
+      <widget class="CategoryTabWidget" name="rightPanel">
+       <property name="styleSheet">
+        <string notr="true"/>
+       </property>
        <property name="tabPosition">
         <enum>QTabWidget::East</enum>
        </property>
        <property name="currentIndex">
-        <number>1</number>
+        <number>0</number>
        </property>
        <widget class="QWidget" name="bindsTab">
         <attribute name="title">
@@ -499,7 +501,20 @@
     <string>Установить интерфейс по умолчанию</string>
    </property>
   </action>
+  <action name="actionExit">
+   <property name="text">
+    <string>Exit</string>
+   </property>
+  </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>CategoryTabWidget</class>
+   <extends>QTabWidget</extends>
+   <header location="global">uitabstyling.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

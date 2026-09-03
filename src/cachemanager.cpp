@@ -19,7 +19,7 @@ void CacheManager::loadCache() {
                 if (!loaded.is_object())
                     continue;
                 cache = std::move(loaded);
-                std::cerr << "[CacheManager] Loaded session cache from: " << qp.toStdString()
+                std::cerr << "[CacheManager] Loaded cache from: " << qp.toStdString()
                           << std::endl;
                 return;
             } catch (...) {
@@ -28,12 +28,12 @@ void CacheManager::loadCache() {
     } catch (...) {
     }
 
-    std::cerr << "[CacheManager] Session cache missing or unreadable." << std::endl;
+    std::cerr << "[CacheManager] Cache missing or unreadable." << std::endl;
 }
 
 void CacheManager::saveCache() {
 
-    const QString qpath = AppSettings::writableSessionCachePath();
+    const QString qpath = AppSettings::writableCacheJsonPath();
     if (qpath.isEmpty()) {
         std::cerr << "[CacheManager] No writable cache path." << std::endl;
         return;
@@ -41,7 +41,7 @@ void CacheManager::saveCache() {
 
     try {
         fileSaver.saveJson(qpath.toStdString(), this->cache);
-        std::cerr << "[CacheManager] Session cache saved: " << qpath.toStdString() << std::endl;
+        std::cerr << "[CacheManager] Cache saved: " << qpath.toStdString() << std::endl;
     } catch (...) {
         std::cerr << "[CacheManager] saveCache failure." << std::endl;
     }

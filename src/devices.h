@@ -162,19 +162,29 @@ class OsInputDevice : public Device {
 
     static void dispatchCallback(uiohook_event* const event) {
         auto* self = s_instance;
-        if (!self || !event) return;
+        if (!self || !event || !self->running_.load(std::memory_order_acquire))
+            return;
 
         if (event->type == EVENT_KEY_PRESSED || event->type == EVENT_KEY_RELEASED) {
             uint16_t modifiers = event->mask;
             uint16_t keycode = event->data.keyboard.keycode;
+            uint16_t rawcode = event->data.keyboard.rawcode;
 
-            std::vector<uint8_t> packet(5);
+            std::vector<uint8_t> packet(7);
             packet[0] = static_cast<uint8_t>(event->type);
             packet[1] = static_cast<uint8_t>(keycode & 0xFF);
             packet[2] = static_cast<uint8_t>((keycode >> 8) & 0xFF);
             packet[3] = static_cast<uint8_t>(modifiers & 0xFF);
             packet[4] = static_cast<uint8_t>((modifiers >> 8) & 0xFF);
+            packet[5] = static_cast<uint8_t>(rawcode & 0xFF);
+            packet[6] = static_cast<uint8_t>((rawcode >> 8) & 0xFF);
 
+            self->emitData(packet.data(), packet.size());
+        }
+        else if (event->type == EVENT_MOUSE_PRESSED || event->type == EVENT_MOUSE_RELEASED) {
+            std::vector<uint8_t> packet(2);
+            packet[0] = static_cast<uint8_t>(event->type);
+            packet[1] = static_cast<uint8_t>(event->data.mouse.button);
             self->emitData(packet.data(), packet.size());
         }
     }
@@ -194,7 +204,6 @@ public:
 
     ~OsInputDevice() override {
         close();
-        s_instance = nullptr;
     }
 
     bool open() override {
@@ -206,14 +215,17 @@ public:
     }
 
     void close() override {
-        if (!running_.exchange(false)) return;
+        if (!running_.exchange(false))
+            return;
+
+        if (s_instance == this)
+            s_instance = nullptr;
 
         // hook_stop() прервёт блокирующий hook_run() в другом потоке
         hook_stop();
 
-        if (hookThread_.joinable()) {
+        if (hookThread_.joinable())
             hookThread_.join();
-        }
     }
 
     bool isOpen() const override { return running_.load(); }

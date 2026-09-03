@@ -176,6 +176,22 @@ std::vector<PluginDeviceDescriptor> PluginDeviceBrokerImpl::listDevices()
     return out;
 }
 
+std::vector<PluginDeviceDescriptor> PluginDeviceBrokerImpl::listAudioCaptureDevices()
+{
+    if (!dm_)
+        return listAudioOnlyViaMiniAudio();
+
+    std::vector<PluginDeviceDescriptor> out;
+    for (const auto& a : dm_->getCaptureDevices()) {
+        PluginDeviceDescriptor d;
+        d.kind = a.type.empty() ? "audio_capture" : a.type;
+        d.id = a.id;
+        d.name = a.name;
+        out.push_back(std::move(d));
+    }
+    return out;
+}
+
 IAudioCaptureStream* PluginDeviceBrokerImpl::openAudioCapture(const std::string& deviceId)
 {
     if (!impl_ || !impl_->ok)

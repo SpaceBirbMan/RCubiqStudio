@@ -8,7 +8,9 @@
 #include "shorts.h"
 #include "icacheable.h"
 #include <nlohmann/json.hpp>
-#include "misc.h"
+#include "rcqapi.h"
+#include "logger.h"
+#include "jsonutil.h"
 
 using json = nlohmann::json;
 class ViewportWidget;
@@ -53,9 +55,11 @@ private:
     }
 
     void deserializeCache(const nlohmann::json& data) override {
-        enginesRegistry = data["enginesRegistry"];
-        if (data.contains("activeEnginePath"))
-            activeEnginePath = data["activeEnginePath"];
+        if (data.contains("enginesRegistry"))
+            fillStringSetFromJsonArray(data["enginesRegistry"], enginesRegistry);
+        else
+            enginesRegistry.clear();
+        activeEnginePath = jsonStringOr(data, "activeEnginePath");
     }
 
     void preInitialize();
@@ -67,18 +71,27 @@ private:
     void activateEngineByPath(std::string path);
     /// Выгрузка экземпляра и вкладок; запись в реестре и строка toolbox остаются.
     void deactivateEngineByPath(std::string path);
+    void deactivateEngineByPathImpl(std::string path, bool persistSession);
     void removeEngine(std::string path);
     void setFuncs(funcMap map);
     void getActiveFrames(); // запрос на получение указателя на очередь кадров, не актуально
     void addNames(std::vector<std::string> names);
     void startRendering(GraphicBus bus); // не актуально, пусто
     void sendTrackerTable(std::unordered_map<std::string, std::shared_ptr<void>>* table);
+    void onControlTableUpdated(ControlTableUpdate update);
     void sendRenderer(IRenderer* ptr); // не актуально
     void sendWinId(uintptr_t id);
     void engTickWrapper(); // для вызова функции tick() у плагина, не актуально
     void sendViewport(ViewportWidget* vp);
     void resize(ViewportBus b); // передаёт размер viewport в плагин
     void sendDataBus(IDataBus* dbp);
+    void flushPendingEngineDeletes();
+    void deactivateOtherEnginesExcept(const std::string& keepPath);
+    void shutdownAllEngines();
+    void stopEngineTick();
+    void postStatus(const std::string& text);
+
+    ModuleLogProvider log_;
 
 };
 

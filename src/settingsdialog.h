@@ -40,6 +40,8 @@ private:
     QLabel* m_ignorePluginHint = nullptr;
     QCheckBox* m_traceFlow = nullptr;
     QLabel* m_traceHint = nullptr;
+    QCheckBox* m_logToFile = nullptr;
+    QLabel* m_logToFileHint = nullptr;
     QCheckBox* m_welcomeStartup = nullptr;
     QLabel* m_welcomeHint = nullptr;
     QCheckBox* m_developerMode = nullptr;

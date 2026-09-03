@@ -4,18 +4,15 @@
 
 // todo: Возможно стоит добавлять функции списком а не только по одному
 
-void EventManager::waitUntilQuiet(std::chrono::milliseconds timeout) {
-    using clock = std::chrono::steady_clock;
-    const auto deadline = clock::now() + timeout;
-    while (clock::now() < deadline) {
-        if (messages.is_empty() && !processor.isDispatching()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            if (messages.is_empty() && !processor.isDispatching())
-                return;
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        }
-    }
+void EventManager::drainPendingMessages() {
+    processor.drainPendingMessages();
+}
+
+void EventManager::waitUntilIdle() {
+    std::unique_lock<std::mutex> lock(processor.idleMutex());
+    processor.idleCv().wait(lock, [this]() {
+        return messages.is_empty() && !processor.isDispatching();
+    });
 }
 
 void EventManager::test() {
@@ -49,6 +46,7 @@ void EventManager::dispatchImmediately(const AppMessage& message)
             std::cerr << "Exception in immediate callback '" << sstr.name << "' " << e.what() << std::endl;
         }
     }
+    processor.notifyIfIdle();
 }
 
 EventQueue& EventManager::getQueue() { return messages; }

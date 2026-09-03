@@ -7,27 +7,17 @@
 #include "otherplugins.h"
 
 #include "appsettings.h"
+#include "consts.h"
+#include "logger.h"
+#include "appshutdown.h"
+#include "devicehotplugnotifier.h"
 
 #include <QApplication>
-#include <chrono>
 
 #ifdef QML
 #include <QQmlEngine>
 #include <QQuickView>
 #endif
-
-// todo: Метод, просящий модуль подписаться на определённое событие (можно ввести уровни доверия, чтобы нельзя было втыкать опасные методы)
-// Вспомогательная функция для корректного завершения: сначала трекеры, затем сохранить сессию без ожидания отчётов модулей.
-void sendSaveCacheMessage(AppCore *core)
-{
-    if (!core)
-        return;
-    EventManager &em = core->getEventManager();
-    constexpr auto kPhaseWait = std::chrono::seconds(15);
-    em.sendMessage(AppMessage("main", "stop_tracker", 0));
-    em.waitUntilQuiet(kPhaseWait);
-    core->persistPluginsAndWriteSessionCache({});
-}
 
 int main(int argc, char *argv[])
 {
@@ -59,6 +49,8 @@ int main(int argc, char *argv[])
     DeviceManager *dvm = new DeviceManager(core);
     TrackerManager *tkm = new TrackerManager(core);
     OtherPlugins *op = new OtherPlugins(core); // <-- должен создаваться последним
+    DeviceHotplugNotifier hotplugNotifier(core, &a);
+    hotplugNotifier.installOn(&a);
 
     core->getCrashHandler().publishPendingIfAny();
 
@@ -79,7 +71,7 @@ int main(int argc, char *argv[])
     // view.show();
 #endif
 
-    QObject::connect(&a, &QApplication::aboutToQuit, [&core]() { sendSaveCacheMessage(core); });
+    QObject::connect(&a, &QApplication::aboutToQuit, [&core]() { beginApplicationShutdown(core); });
 
     return a.exec();
 }

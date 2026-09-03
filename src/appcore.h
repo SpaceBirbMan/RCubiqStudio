@@ -19,8 +19,14 @@ public:
 
     CrashHandler& getCrashHandler() { return *crashHandler; }
 
-    /// Цепочка: синхронно разослать persist_modules подписчикам и записать session/cache (устанавливает DataManager).
-    void setPersistPipeline(std::function<void(const std::string& dllPathHint)> fn);
+    /// DataManager registers these at startup.
+    void setPersistCallbacks(
+        std::function<void(const std::string& dllPathHint)> pluginModulesFn,
+        std::function<void()> sessionCacheFn);
+    /// persist_modules only — plugin-side files; does not rewrite cache.json activeEnginePath.
+    void persistPluginModules(const std::string& dllPathHint);
+    /// Serialize host modules and write cache.json.
+    void writeSessionCache();
     void persistPluginsAndWriteSessionCache(const std::string& dllPathHint);
 
     // вынести subscribe, send и прочее
@@ -43,7 +49,8 @@ private:
     EventQueue *eQueuePointer = nullptr;
     EventManager eventManager;
     std::unique_ptr<CrashHandler> crashHandler;
-    std::function<void(const std::string&)> persistPipeline_;
+    std::function<void(const std::string&)> persistPluginModulesFn_;
+    std::function<void()> writeSessionCacheFn_;
 
     void dummyFunction() {
         std::cout<< eQueuePointer->logQueue() << std::endl;

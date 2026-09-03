@@ -4,7 +4,9 @@
 #include <set>
 #include <queue>
 #include "icacheable.h"
-#include "misc.h"
+#include "rcqapi.h"
+#include "jsonutil.h"
+#include "logger.h"
 
 class AppCore;
 
@@ -43,13 +45,13 @@ private:
     }
 
     void deserializeCache(const nlohmann::json& data) override {
-        if (data.contains("pluginsRegistry") && data["pluginsRegistry"].is_array())
-            pluginsRegistry = data["pluginsRegistry"].get<std::set<std::string>>();
+        if (data.contains("pluginsRegistry"))
+            fillStringSetFromJsonArray(data["pluginsRegistry"], pluginsRegistry);
         else
             pluginsRegistry.clear();
 
-        if (data.contains("activePluginPaths") && data["activePluginPaths"].is_array())
-            activePluginPaths = data["activePluginPaths"].get<std::set<std::string>>();
+        if (data.contains("activePluginPaths"))
+            fillStringSetFromJsonArray(data["activePluginPaths"], activePluginPaths);
         else
             activePluginPaths.clear();
     }
@@ -66,6 +68,8 @@ public:
     void postInitialize();
     void disablePlugin(std::string path);
     void enablePlugin(std::string path);
+
+    ModuleLogProvider log_;
 
 };
 

@@ -309,6 +309,21 @@ void AppSettings::setTraceProgramFlow(bool enabled)
     syncTraceLogWithFlag();
 }
 
+bool AppSettings::logToFile()
+{
+    installAppMetadata();
+    QSettings st;
+    return st.value(QLatin1String("diag/log_to_file"), true).toBool();
+}
+
+void AppSettings::setLogToFile(bool enabled)
+{
+    installAppMetadata();
+    QSettings st;
+    st.setValue(QLatin1String("diag/log_to_file"), enabled);
+    st.sync();
+}
+
 bool AppSettings::ignorePluginVersionCheck()
 {
     installAppMetadata();
@@ -483,11 +498,11 @@ QString AppSettings::writablePluginsCacheDirectory()
     return QFileInfo(fallback).absoluteFilePath();
 }
 
-QString AppSettings::writableSessionCachePath()
+QString AppSettings::writableCacheJsonPath()
 {
     installAppMetadata();
     if (usesPortableUserDataRoots()) {
-        const QString path = QDir(QCoreApplication::applicationDirPath()).filePath(QLatin1String("session_cache.json"));
+        const QString path = QDir(QCoreApplication::applicationDirPath()).filePath(QLatin1String("cache.json"));
         const QFileInfo fi(path);
         QDir().mkpath(fi.absolutePath());
         return fi.absoluteFilePath();
@@ -509,7 +524,7 @@ QString AppSettings::writableSessionCachePath()
     if (base.isEmpty())
         base = QDir::homePath();
     const QString fallback =
-        QDir(base).filePath(QStringLiteral("session_cache.json"));
+        QDir(base).filePath(QStringLiteral("cache.json"));
     const QFileInfo fb(fallback);
     QDir().mkpath(fb.absolutePath());
     return QFileInfo(fallback).absoluteFilePath();
@@ -518,7 +533,7 @@ QString AppSettings::writableSessionCachePath()
 QStringList AppSettings::cacheJsonCandidatePathsIncludingWritableFallback()
 {
     QStringList list = cacheJsonCandidatePaths();
-    const QString w = writableSessionCachePath();
+    const QString w = writableCacheJsonPath();
     if (!w.isEmpty() && !list.contains(w))
         list.append(w);
     return list;
@@ -531,6 +546,7 @@ void AppSettings::restoreFactoryDefaults(QApplication& app)
     st.remove(QLatin1String("appearance/widget_theme"));
     st.remove(QLatin1String("locale/ui_language"));
     st.remove(QLatin1String("diag/trace_verbose"));
+    st.remove(QLatin1String("diag/log_to_file"));
     st.remove(QLatin1String("plugins/ignore_version_check"));
     st.remove(QLatin1String("behavior/show_welcome_on_startup"));
     st.remove(QLatin1String("behavior/developer_mode"));

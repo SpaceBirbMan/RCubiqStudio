@@ -8,7 +8,8 @@
 #include <functional>
 #include <vector>
 #include <string>
-#include "misc.h"
+#include "rcqapi.h"
+#include "appmessage.h"
 
 class EventQueue; // решение циклической зависимости
 
@@ -52,7 +53,17 @@ public:
         return dispatchDepth.load(std::memory_order_acquire) > 0;
     }
 
+    /// Process every message currently in the queue. Safe to call from inside a callback
+    /// (the worker thread unlocks its mutex before invoking handlers).
+    void drainPendingMessages();
+
+    std::mutex& idleMutex();
+    std::condition_variable& idleCv();
+
+    void notifyIfIdle();
+
 private:
+    void dispatchOne(const AppMessage& msg);
     std::thread proc_thread;
     std::mutex mut;
     std::condition_variable cv;
@@ -60,6 +71,9 @@ private:
     std::atomic<int> dispatchDepth{0};
     EventQueue& qPtr;
     std::function<std::vector<subStruct>(const std::string&)> getSubscribersSnapshot;
+
+    std::mutex sync_mutex_;
+    std::condition_variable sync_cv_;
 
     void process();
 

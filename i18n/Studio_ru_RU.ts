@@ -29,12 +29,17 @@
         <translation>ОЗУ: 0</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+7"/>
         <source>File</source>
         <translation>Файл</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location filename="../ui/mainwindow.ui" line="506"/>
+        <source>Exit</source>
+        <translation>Выход</translation>
+    </message>
+    <message>
+        <location line="+0"/>
         <source>View</source>
         <translation>Вид</translation>
     </message>
@@ -397,6 +402,15 @@
     <message>
         <source>Removed %1 cache file(s). Restart or reload scenes for a clean slate.</source>
         <translation>Удалено файлов кэша: %1. Перезапустите приложение или перезагрузите сцены для чистого состояния.</translation>
+    </message>
+</context>
+<context>
+    <name>ViewportPlaceholder</name>
+    <message>
+        <location filename="../src/viewportplaceholderoverlay.cpp" line="11"/>
+        <location filename="../src/viewportwidget.cpp" line="549"/>
+        <source>placeholder_hint</source>
+        <translation>Рендер отсутствует. Добавьте плагин-движок во вкладке "Плагины"</translation>
     </message>
 </context>
 </TS>

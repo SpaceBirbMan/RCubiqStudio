@@ -29,6 +29,7 @@
 #include <string>
 
 #include "abstractuinodes.h"
+#include "uitabstyling.h"
 
 using namespace RUI;
 
@@ -50,9 +51,11 @@ public:
     static QWidget* renderToolBox(UiToolBox* toolbox);
 
     static void renderToTabWidget(std::shared_ptr<UiPage> root, QTabWidget* tabTarget,
-                                  const std::string& pluginLibraryPath = {});
+                                  const std::string& pluginLibraryPath = {},
+                                  UiTabCategory category = UiTabCategory::App);
     static void renderToTabWidget(const std::vector<std::shared_ptr<UiPage>>& pages, QTabWidget* tabTarget,
-                                  const std::string& pluginLibraryPath = {});
+                                  const std::string& pluginLibraryPath = {},
+                                  UiTabCategory category = UiTabCategory::App);
 };
 
 #endif // UIRENDERER_H

@@ -197,6 +197,15 @@ SettingsDialog::SettingsDialog(QWidget* parent, AppCore* core)
         &m_hintLabels);
     layDiag->addWidget(m_traceHint);
 
+    m_logToFile = new QCheckBox(tr("Write application log to studio.log"), grpDiag);
+    layDiag->addWidget(m_logToFile);
+    m_logToFileHint = makeHint(
+        grpDiag,
+        tr("Keeps the central logger output in plugins_cache/studio.log. Console output is always on. "
+           "Disable to avoid disk writes while debugging."),
+        &m_hintLabels);
+    layDiag->addWidget(m_logToFileHint);
+
     m_showGpuLoad = new QCheckBox(tr("Show GPU frame-time load in the status bar"), grpDiag);
     layDiag->addWidget(m_showGpuLoad);
     m_showGpuLoadHint = makeHint(
@@ -321,6 +330,7 @@ void SettingsDialog::loadFromSettings()
 
     m_ignorePluginVersion->setChecked(AppSettings::ignorePluginVersionCheck());
     m_traceFlow->setChecked(AppSettings::traceProgramFlow());
+    m_logToFile->setChecked(AppSettings::logToFile());
     m_welcomeStartup->setChecked(AppSettings::showWelcomeOnStartup());
     m_developerMode->setChecked(AppSettings::developerMode());
     m_enumVideoStartup->setChecked(AppSettings::enumerateVideoInputsAtStartup());
@@ -334,6 +344,9 @@ void SettingsDialog::saveFromUi()
     AppSettings::setUiLanguage(m_language->currentData().toString());
     AppSettings::setIgnorePluginVersionCheck(m_ignorePluginVersion->isChecked());
     AppSettings::setTraceProgramFlow(m_traceFlow->isChecked());
+    AppSettings::setLogToFile(m_logToFile->isChecked());
+    if (m_core)
+        m_core->getEventManager().getLogger().setFileLoggingEnabled(m_logToFile->isChecked());
     AppSettings::setDeveloperMode(m_developerMode->isChecked());
     AppSettings::setEnumerateVideoInputsAtStartup(m_enumVideoStartup->isChecked());
     AppSettings::setStartVirtualCameraBridgeAtStartup(m_virtualCamStartup->isChecked());

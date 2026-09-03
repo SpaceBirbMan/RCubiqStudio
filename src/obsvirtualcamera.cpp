@@ -1,5 +1,8 @@
 #include "obsvirtualcamera.h"
 
+#include "bushandle.h"
+#include "databus.h"
+
 #include <QApplication>
 #include <QDateTime>
 #include <QGuiApplication>
@@ -9,6 +12,7 @@
 #include <QWidget>
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
@@ -16,6 +20,7 @@
 #include <iostream>
 
 #ifdef _WIN32
+#    include <d3d11.h>
 #    include <shlobj.h>
 #    include <wingdi.h>
 #    include <windows.h>
@@ -59,9 +64,29 @@ struct obs_queue_header {
 
 // ---------------------------------------------------------------------------
 
+#ifdef _WIN32
+struct GpuReadbackCache {
+    ID3D11Texture2D* stagingTex = nullptr;
+    uint32_t stagingW = 0;
+    uint32_t stagingH = 0;
+    DXGI_FORMAT stagingFmt = DXGI_FORMAT_UNKNOWN;
+
+    void release()
+    {
+        if (stagingTex) {
+            stagingTex->Release();
+            stagingTex = nullptr;
+        }
+        stagingW = stagingH = 0;
+        stagingFmt = DXGI_FORMAT_UNKNOWN;
+    }
+};
+#endif
+
 struct ObsVirtualCamera::Impl {
 #ifdef _WIN32
     HANDLE hmap = nullptr;
+    GpuReadbackCache gpuReadback;
 #endif
     obs_queue_header* header     = nullptr;
     uint64_t*         ts[3]      = {};
@@ -70,7 +95,7 @@ struct ObsVirtualCamera::Impl {
     uint32_t                       cx         = 0;
     uint32_t                       cy         = 0;
     uint64_t                       interval   = 0;
-    int minCapMs = 50;   // RCQ_OBS_CAP_MIN_MS; 0 = off
+    int minCapMs = 0;   // GPU path: no throttle; set RCQ_OBS_CAP_MIN_MS for HWND fallback
     std::chrono::steady_clock::time_point lastCap{std::chrono::steady_clock::time_point::min()};
 };
 
@@ -88,6 +113,9 @@ bool ObsVirtualCamera::isStreaming() const { return m_streaming; }
 // Forward declarations for static helpers used by workerLoop
 // ---------------------------------------------------------------------------
 static QImage captureViewportRgb888(QWidget* vp, bool mainThreadOnly = true);
+#ifdef _WIN32
+static QImage captureD3dTextureRgb888(ID3D11Texture2D* src, GpuReadbackCache* cache);
+#endif
 static void rgb888_to_nv12(const uint8_t* rgb, int src_stride,
                             uint8_t* dst_y, uint8_t* dst_uv,
                             uint32_t cx, uint32_t cy);
@@ -100,6 +128,7 @@ void ObsVirtualCamera::workerLoop()
 {
     while (true) {
         QWidget* vp = nullptr;
+        void* texRaw = nullptr;
         {
             std::unique_lock<std::mutex> lk(m_captureMutex);
             m_captureCV.wait(lk, [this] {
@@ -107,22 +136,31 @@ void ObsVirtualCamera::workerLoop()
             });
             if (m_captureStop.load()) break;
             vp = m_captureViewport;
+            texRaw = m_pendingTexture.exchange(nullptr);
             m_capturePending.store(false);
         }
 
-        if (!m_impl || !m_streaming || !vp) continue;
+        if (!m_impl || !m_streaming) continue;
+
+        // Coalesce: keep only the newest GPU texture if more arrived while waiting.
+        if (void* newer = m_pendingTexture.exchange(nullptr))
+            texRaw = newer;
 
         const uint32_t cx = m_impl->cx;
         const uint32_t cy = m_impl->cy;
 
         const bool isTest = (qgetenv("RCQ_VCAM_TEST_BARS") == "1");
-        if (!isTest && m_impl->minCapMs > 0) {
+        const bool gpuPath = (texRaw != nullptr);
+
+        if (!isTest && !gpuPath && m_impl->minCapMs > 0) {
             const auto now = std::chrono::steady_clock::now();
             if (m_impl->lastCap != std::chrono::steady_clock::time_point::min()
                 && (now - m_impl->lastCap) < std::chrono::milliseconds(m_impl->minCapMs)) {
                 continue;
             }
         }
+
+        if (!isTest && !gpuPath && !vp) continue;
 
         QImage im;
         if (isTest) {
@@ -137,6 +175,23 @@ void ObsVirtualCamera::workerLoop()
                 }
             }
             phase = (phase + 3) % 256;
+        } else if (gpuPath) {
+#ifdef _WIN32
+            auto* tex = reinterpret_cast<ID3D11Texture2D*>(texRaw);
+            QImage raw = captureD3dTextureRgb888(tex, &m_impl->gpuReadback);
+            if (raw.isNull() || raw.width() < 2) continue;
+            if (static_cast<uint32_t>(raw.width()) != cx || static_cast<uint32_t>(raw.height()) != cy) {
+                im = raw.scaled(static_cast<int>(cx), static_cast<int>(cy),
+                                Qt::IgnoreAspectRatio, Qt::FastTransformation);
+            } else {
+                im = raw;
+            }
+            if (im.format() != QImage::Format_RGB888)
+                im = im.convertToFormat(QImage::Format_RGB888);
+            if (im.isNull()) continue;
+#else
+            continue;
+#endif
         } else {
             QImage raw = captureViewportRgb888(vp, /*mainThreadOnly=*/false);
             if (raw.isNull() || raw.width() < 2) continue;
@@ -176,12 +231,101 @@ static int obsCaptureMinIntervalMs()
 {
     const QByteArray s = qgetenv("RCQ_OBS_CAP_MIN_MS");
     if (s.isEmpty()) {
-        return 50;   // ~20 fps max; 60x/sec grabWindow / BitBlt causes system cursor flicker
+        return 0;   // GPU bus path: full rate; set RCQ_OBS_CAP_MIN_MS=50 for HWND fallback
     }
     bool ok  = false;
     const int v = s.toInt(&ok);
-    return (ok && v >= 0) ? v : 50;   // 0 = no throttle
+    return (ok && v >= 0) ? v : 0;
 }
+
+#ifdef _WIN32
+static QImage captureD3dTextureRgb888(ID3D11Texture2D* src, GpuReadbackCache* cache)
+{
+    if (!src || !cache)
+        return {};
+
+    ID3D11Device* dev = nullptr;
+    src->GetDevice(&dev);
+    if (!dev)
+        return {};
+
+    ID3D11DeviceContext* ctx = nullptr;
+    dev->GetImmediateContext(&ctx);
+    if (!ctx) {
+        dev->Release();
+        return {};
+    }
+
+    D3D11_TEXTURE2D_DESC desc{};
+    src->GetDesc(&desc);
+    if (desc.Width < 2 || desc.Height < 2) {
+        ctx->Release();
+        dev->Release();
+        return {};
+    }
+
+    if (!cache->stagingTex || cache->stagingW != desc.Width || cache->stagingH != desc.Height
+        || cache->stagingFmt != desc.Format) {
+        cache->release();
+        D3D11_TEXTURE2D_DESC st = desc;
+        st.BindFlags      = 0;
+        st.MiscFlags      = 0;
+        st.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        st.Usage          = D3D11_USAGE_STAGING;
+        if (FAILED(dev->CreateTexture2D(&st, nullptr, &cache->stagingTex))) {
+            ctx->Release();
+            dev->Release();
+            return {};
+        }
+        cache->stagingW   = desc.Width;
+        cache->stagingH   = desc.Height;
+        cache->stagingFmt = desc.Format;
+    }
+
+    ctx->CopyResource(cache->stagingTex, src);
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(ctx->Map(cache->stagingTex, 0, D3D11_MAP_READ, 0, &mapped))) {
+        ctx->Release();
+        dev->Release();
+        return {};
+    }
+
+    QImage img(static_cast<int>(desc.Width), static_cast<int>(desc.Height), QImage::Format_RGB888);
+    const bool bgra = (desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM
+                       || desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
+    const bool rgba = (desc.Format == DXGI_FORMAT_R8G8B8A8_UNORM
+                       || desc.Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
+    if (!bgra && !rgba) {
+        ctx->Unmap(cache->stagingTex, 0);
+        ctx->Release();
+        dev->Release();
+        return {};
+    }
+
+    for (uint32_t y = 0; y < desc.Height; ++y) {
+        const uint8_t* row = static_cast<const uint8_t*>(mapped.pData)
+                             + static_cast<size_t>(y) * mapped.RowPitch;
+        uint8_t* out = img.scanLine(static_cast<int>(y));
+        for (uint32_t x = 0; x < desc.Width; ++x) {
+            if (bgra) {
+                out[3 * x + 0] = row[4 * x + 2];
+                out[3 * x + 1] = row[4 * x + 1];
+                out[3 * x + 2] = row[4 * x + 0];
+            } else {
+                out[3 * x + 0] = row[4 * x + 0];
+                out[3 * x + 1] = row[4 * x + 1];
+                out[3 * x + 2] = row[4 * x + 2];
+            }
+        }
+    }
+
+    ctx->Unmap(cache->stagingTex, 0);
+    ctx->Release();
+    dev->Release();
+    return img;
+}
+#endif
 
 static QImage captureViewportRgb888(QWidget* vp, bool mainThreadOnly)
 {
@@ -442,8 +586,8 @@ bool ObsVirtualCamera::startStream(uint32_t cx, uint32_t cy, uint32_t fps)
     m_captureThread = std::thread(&ObsVirtualCamera::workerLoop, this);
 
     std::cerr << "[ObsVCam] started " << cx << "x" << cy << "@" << fps << "fps, interval=" << interval
-              << " (capture min " << m_impl->minCapMs
-              << " ms, RCQ_OBS_CAP_MIN_MS=0 to disable)\n";
+              << " (GPU frames_buffer; HWND throttle " << m_impl->minCapMs
+              << " ms via RCQ_OBS_CAP_MIN_MS)\n";
     return true;
 
 #else
@@ -473,6 +617,8 @@ void ObsVirtualCamera::stopStream()
     if (m_impl->header)
         m_impl->header->state = STATE_STOPPING;
 
+    m_impl->gpuReadback.release();
+
     if (m_impl->header)
         UnmapViewOfFile(m_impl->header);
     if (m_impl->hmap)
@@ -484,17 +630,42 @@ void ObsVirtualCamera::stopStream()
 }
 
 // ---------------------------------------------------------------------------
-// pushFrameFromWidget
+// pushFrameFromBus / pushFrameFromWidget
 // ---------------------------------------------------------------------------
 
-// Non-blocking: wake up the background thread to do the actual capture.
+void ObsVirtualCamera::pushFrameFromBus(IDataBus* bus)
+{
+    if (!m_impl || !m_streaming || !bus)
+        return;
+#ifdef _WIN32
+    auto* hf = bus_handle_cast<std::deque<void*>>(bus, "frames_buffer");
+    if (!hf || !hf->hasLive())
+        return;
+
+    auto& dq = **hf;
+    if (dq.empty())
+        return;
+
+    void* p = dq.back();
+    if (!p)
+        return;
+
+    m_pendingTexture.store(p);
+    {
+        std::lock_guard<std::mutex> lk(m_captureMutex);
+        m_capturePending.store(true);
+    }
+    m_captureCV.notify_one();
+#else
+    (void)bus;
+#endif
+}
+
 void ObsVirtualCamera::pushFrameFromWidget(QWidget* viewport)
 {
     if (!m_impl || !m_streaming || !viewport)
         return;
-    // Skip if previous frame is still being processed (drop frame, don't block).
-    if (m_capturePending.load())
-        return;
+    m_pendingTexture.store(nullptr);
     {
         std::lock_guard<std::mutex> lk(m_captureMutex);
         m_captureViewport = viewport;

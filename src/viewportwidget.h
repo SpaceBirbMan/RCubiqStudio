@@ -24,6 +24,8 @@
 #include <bx/math.h>
 
 #include "appcore.h"
+#include "hostinput.h"
+#include "viewportplaceholderoverlay.h"
 
 class ControlLayer;
 class EngineManager;
@@ -87,12 +89,31 @@ private:
     void scheduleEngineDelete(std::pair<IModel*, std::string> info);
     /// Runs queued engine deletes on the GUI thread so bgfx shutdown happens before further activate/get_win_id.
     void flushPendingEngineDeletes();
+    void stopRenderTick();
+    void runEngineInitRender(std::function<void()> fn);
     void clearNativeSurface();
+    void recreateEngineSurface();
     void layoutEngineSurface();
 
+    bool m_acceptViewportResize = true;
+
     QWidget* engine_surface_ = nullptr;
+    ViewportPlaceholder* m_placeholder = nullptr;
+
+    void showPlaceholder(const std::string& hint = {});
+    void hidePlaceholder();
+    void onRenderingInactive(std::string hint);
+    void onRenderingActive(int);
 
     int viewport_size[2] {0, 0};
+    double viewport_dpr_ = 1.0;
+
+    HostInputControllers* hostInput_ = nullptr;
+    std::shared_ptr<KeyboardKeysState> keyboardState_;
+
+    void pushViewportCommand(ViewportCommand cmd);
+    static std::string mouseButtonName(Qt::MouseButton btn);
+    void setMouseButtonHeld(const std::string& btn, bool held);
 
     /// WinId видаviewport (стабильный для канала window_handle на шине).
     uintptr_t canonical_win_id_ = 0;

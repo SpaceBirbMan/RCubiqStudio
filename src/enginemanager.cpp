@@ -1,11 +1,16 @@
 #include "enginemanager.h"
 #include "consts.h"
+#include "pluginmeta.h"
+#include <chrono>
+#include <thread>
 
 #ifdef _WIN32
 #include "spoutsender.h"
 #endif
 
-EngineManager::EngineManager(AppCore* acptr) {
+EngineManager::EngineManager(AppCore* acptr)
+    : log_(acptr->getEventManager().getLogger().registerModule(name))
+{
     this->acptr = acptr;
 
     acptr->getEventManager().subscribe(name, "initialize", &EngineManager::initialize, this);
@@ -15,12 +20,23 @@ EngineManager::EngineManager(AppCore* acptr) {
     acptr->getEventManager().subscribe(name, "start_drawing_frames", &EngineManager::getActiveFrames, this);
     acptr->getEventManager().subscribe(name, "add_engines_names", &EngineManager::addNames, this);
     acptr->getEventManager().subscribe(name, "send_table", &EngineManager::sendTrackerTable, this);
+    acptr->getEventManager().subscribe(name, AppLifecycleEvents::kControlTableUpdated,
+                                       &EngineManager::onControlTableUpdated, this);
     acptr->getEventManager().subscribe(name, "send_win_id", &EngineManager::sendWinId, this);
     acptr->getEventManager().subscribe(name, "send_vp", &EngineManager::sendViewport, this);
     acptr->getEventManager().subscribe(name, "send_dbus_e", &EngineManager::sendDataBus, this);
     acptr->getEventManager().subscribe(name, "activate_engine_by_path", &EngineManager::activateEngineByPath, this);
     acptr->getEventManager().subscribe(name, "deactivate_engine_by_path", &EngineManager::deactivateEngineByPath, this);
     acptr->getEventManager().subscribe(name, "remove_engine", &EngineManager::removeEngine, this);
+    acptr->getEventManager().subscribe(name, AppShutdownEvents::kStopEngineTick,
+                                       &EngineManager::stopEngineTick, this);
+    acptr->getEventManager().subscribe(name, AppShutdownEvents::kShutdownAllEngines,
+                                       &EngineManager::shutdownAllEngines, this);
+}
+
+void EngineManager::stopEngineTick() {
+    tickWrapper = nullptr;
+    log_.info("stop_engine_tick: tick wrapper cleared");
 }
 
 void EngineManager::setFuncs(funcMap map) {}
@@ -59,87 +75,183 @@ void EngineManager::initialize() {
 
 void EngineManager::addNames(std::vector<std::string> names) {
     for (const std::string& path : names) {
-        // Insert into registry (idempotent — set ignores duplicates)
         enginesRegistry.insert(path);
 
-        // Always notify UI; uiAddPluginEntry has its own duplicate guard
+        const PluginDisplayMeta meta = readPluginDisplayMeta(path);
         PluginUIInfo info;
         info.path = path;
-        info.name = path;
+        info.name = meta.displayName;
+        info.description = meta.description;
         info.type = PluginUIType::Engine;
         acptr->getEventManager().sendMessage(AppMessage(name, "engine_ui_ready", info));
-        std::cout << "[EngineManager] Engine ui_ready sent: " << path << std::endl;
+        log_.info("engine ui_ready: " + meta.displayName);
     }
     acptr->getEventManager().sendMessage(AppMessage(name, "added_names", names.size()));
 }
 
+void EngineManager::postStatus(const std::string& text) {
+    acptr->getEventManager().sendMessage(
+        AppMessage("Core", AppUiEvents::kStatusMessage, text));
+}
+
+void EngineManager::flushPendingEngineDeletes() {
+    log_.info("flush_pending_engine_deletes requested (thread="
+              + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + ")");
+    acptr->getEventManager().dispatchImmediately(
+        AppMessage("ViewportWidget", "flush_engine_deletes", 0));
+    log_.info("flush_pending_engine_deletes done");
+}
+
+void EngineManager::deactivateOtherEnginesExcept(const std::string& keepPath) {
+    std::vector<std::string> toStop;
+    toStop.reserve(engines.size());
+    for (const auto& [p, _] : engines) {
+        if (p != keepPath)
+            toStop.push_back(p);
+    }
+    for (const auto& p : toStop) {
+        log_.info("switch: deactivating other loaded engine: " + p);
+        deactivateEngineByPath(p);
+    }
+}
+
+void EngineManager::shutdownAllEngines() {
+    log_.info("shutdown_all_engines: begin");
+    if (!activeEnginePath.empty()) {
+        log_.info("shutdown: deactivating active engine: " + activeEnginePath);
+        deactivateEngineByPathImpl(activeEnginePath, false);
+    }
+    std::vector<std::string> loaded;
+    loaded.reserve(engines.size());
+    for (const auto& [p, _] : engines)
+        loaded.push_back(p);
+    for (const auto& p : loaded) {
+        log_.info("shutdown: deactivating loaded engine: " + p);
+        deactivateEngineByPathImpl(p, false);
+    }
+    pendingResolutionPath.clear();
+    acptr->getEventManager().drainPendingMessages();
+    flushPendingEngineDeletes();
+    log_.info("shutdown_all_engines: complete");
+    postStatus("");
+}
+
 void EngineManager::activateEngineByPath(std::string path) {
     if (path.empty()) {
-        std::cerr << "[EngineManager] activateEngineByPath called with empty path\n";
+        log_.warn("activateEngineByPath called with empty path");
         return;
     }
+
+    log_.info("activate_engine_by_path: " + path);
+    postStatus("Loading engine: " + path);
+    flushPendingEngineDeletes();
+    deactivateOtherEnginesExcept(path);
+    acptr->getEventManager().drainPendingMessages();
+    flushPendingEngineDeletes();
 
     // Already loaded — switch tick/UI (test() + win id refresh republish init_ui_eng)
     auto it = engines.find(path);
     if (it != engines.end()) {
         activeEnginePath = path;
         tickWrapper = [this, path]() { engines.at(path).instance->tick(); };
+        postStatus("Activating engine: " + path);
         try {
             it->second.instance->test();
         } catch (...) {
-            std::cout << "[EngineManager] test() on re-activate failed\n";
+            log_.warn("test() on re-activate failed: " + path);
         }
         acptr->getEventManager().sendMessage(AppMessage(name, "get_win_id", 0));
-        std::cout << "[EngineManager] Switched to already-loaded engine: " << path << std::endl;
+        log_.info("switched to already-loaded engine: " + path);
         return;
     }
 
     // Need to resolve and load
     pendingResolutionPath = path;
+    postStatus("Resolving engine DLL: " + path);
+    log_.info("resolving engine: " + path);
     LibMeta meta;
     meta.path = path;
     meta.func_names = {"create_engine", "destroy_engine"};
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_resolving_request", meta));
-    std::cout << "[EngineManager] Resolving engine: " << path << std::endl;
 }
 
 void EngineManager::deactivateEngineByPath(std::string path) {
+    deactivateEngineByPathImpl(std::move(path), true);
+}
+
+void EngineManager::deactivateEngineByPathImpl(std::string path, bool persistSession) {
     if (path.empty()) {
-        std::cerr << "[EngineManager] deactivateEngineByPath called with empty path\n";
+        log_.warn("deactivateEngineByPath called with empty path");
         return;
     }
 
-    acptr->persistPluginsAndWriteSessionCache(path);
+    log_.info("deactivate_engine_by_path: begin " + path);
+    postStatus("Unloading engine: " + path);
+
+    log_.info("deactivate: stop render tick before engine shutdown");
+    acptr->getEventManager().dispatchImmediately(
+        AppMessage(name, AppShutdownEvents::kStopEngineTick, 0));
+
+    if (persistSession) {
+        log_.info("deactivate: persist session cache");
+        acptr->persistPluginsAndWriteSessionCache(path);
+        log_.info("deactivate: persist done");
+    } else {
+        log_.info("deactivate: skip persist (already saved at app shutdown)");
+    }
 
     acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsInvalidate, 0));
+    log_.info("deactivate: stream bindings invalidated");
 
     auto it = engines.find(path);
     if (it != engines.end()) {
         EngineData data = it->second;
         engines.erase(it);
+        log_.info("deactivate: erased from engines map");
 
 #ifdef _WIN32
         spoutNotifyEngineDeviceReset();
 #endif
-        data.instance->shutdown();
+        // plugin_runtime_teardown removes UI tabs while DLL is still mapped.
+        log_.info("deactivate: plugin_runtime_teardown");
+        acptr->getEventManager().dispatchImmediately(
+            AppMessage(name, AppLifecycleEvents::kPluginRuntimeTeardown, path));
 
-        // Payload MUST be std::pair<IModel*, std::string> — ViewportWidget subscribes with that exact type;
-        // a local struct would never match typeid and deletes (bgfx::shutdown) would never run.
-        acptr->getEventManager().sendMessage(AppMessage(
+        log_.info("deactivate: control_table_updated subs before shutdown: "
+            + acptr->getEventManager().subscriberReceiversForTopic(
+                AppLifecycleEvents::kControlTableUpdated));
+        log_.info("deactivate: calling instance->shutdown()");
+        data.instance->shutdown();
+        log_.info("deactivate: instance->shutdown() returned");
+        log_.info("deactivate: control_table_updated subs after shutdown: "
+            + acptr->getEventManager().subscriberReceiversForTopic(
+                AppLifecycleEvents::kControlTableUpdated));
+
+        // Payload MUST be std::pair<IModel*, std::string> — ViewportWidget subscribes with that exact type.
+        acptr->getEventManager().dispatchImmediately(AppMessage(
             name, "schedule_engine_delete",
             std::make_pair(data.instance, path)));
-        std::cout << "[EngineManager] Engine deactivated; delete scheduled: " << path << std::endl;
+        log_.info("engine instance shutdown, delete scheduled: " + path);
+    } else {
+        log_.info("deactivate: engine not loaded (registry only): " + path);
     }
 
     if (activeEnginePath == path) {
         activeEnginePath.clear();
         tickWrapper = nullptr;
-        std::cout << "[EngineManager] Active engine cleared (deactivate)\n";
+        log_.info("active engine cleared");
     }
 
-    acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kPluginRuntimeTeardown, path));
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_set_inactive", path));
-    acptr->getEventManager().sendMessage(AppMessage(name, "clear_viewport_surface", 0));
+
+    acptr->getEventManager().drainPendingMessages();
+    log_.info("deactivate: flush pending deletes");
+    flushPendingEngineDeletes();
+    acptr->getEventManager().dispatchImmediately(
+        AppMessage(name, "clear_viewport_surface", 0));
+
+    log_.info("deactivate_engine_by_path complete: " + path);
+    postStatus("");
 }
 
 void EngineManager::removeEngine(std::string path) {
@@ -167,9 +279,10 @@ void EngineManager::removeEngine(std::string path) {
 
         // Actual delete (→ bgfx::shutdown) must run on the main thread.
         // ViewportWidget subscribes on std::pair<IModel*, std::string>; see deactivate_engine_by_path.
-        acptr->getEventManager().sendMessage(
+        acptr->getEventManager().dispatchImmediately(
             AppMessage(name, "schedule_engine_delete",
                        std::make_pair(data.instance, path)));
+        flushPendingEngineDeletes();
         std::cout << "[EngineManager] Engine shutdown done; delete scheduled on main thread: " << path << std::endl;
     }
 
@@ -185,6 +298,8 @@ void EngineManager::removeEngine(std::string path) {
     // Notify UI to remove the page (и вкладки — дубль с teardown, порядок как у gen_plugin)
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_ui_removed", path));
     acptr->getEventManager().sendMessage(AppMessage(name, "clear_viewport_surface", 0));
+    acptr->getEventManager().drainPendingMessages();
+    flushPendingEngineDeletes();
 }
 
 /**
@@ -246,6 +361,7 @@ void EngineManager::activateEngine(std::vector<void*> pointers) {
         std::cout << "[EngineManager] getUiPages failed\n";
     }
 
+    postStatus("Engine ready: " + resolvedPath);
     acptr->getEventManager().sendMessage(AppMessage(name, "get_win_id", 0));
 }
 
@@ -255,6 +371,8 @@ void EngineManager::sendViewport(ViewportWidget* vp) {
 }
 
 void EngineManager::resize(ViewportBus b) {
+    if (activeEnginePath.empty())
+        return;
     auto it = engines.find(activeEnginePath);
     if (it != engines.end() && it->second.instance) {
         it->second.instance->update(b);
@@ -268,8 +386,13 @@ void EngineManager::sendTrackerTable(std::unordered_map<std::string, std::shared
         em.table = table;
         em.windowHandle = 0;
         it->second.instance->setMeta(em);
-    acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsRestore, 0));
+        acptr->getEventManager().sendMessage(AppMessage(name, AppLifecycleEvents::kStreamBindingsRestore, 0));
     }
+}
+
+void EngineManager::onControlTableUpdated(ControlTableUpdate update) {
+    if (update.table)
+        sendTrackerTable(update.table);
 }
 
 void EngineManager::sendDataBus(IDataBus* dbp) {
@@ -298,6 +421,9 @@ void EngineManager::sendWinId(uintptr_t id) {
     };
 
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_ready", tickWrapper));
+    acptr->getEventManager().sendMessage(AppMessage(
+        name, "engine_init_render",
+        std::function<void()>([eng]() { eng->initRender(); })));
     // Notify UI to check the active engine checkbox
     acptr->getEventManager().sendMessage(AppMessage(name, "engine_set_active", activeEnginePath));
     // Request tracker tables to reconnect engine with active trackers

@@ -8,6 +8,7 @@
 #include <condition_variable>
 
 class QWidget;
+class IDataBus;
 
 class ObsVirtualCamera {
 public:
@@ -24,9 +25,10 @@ public:
 
     void stopStream();
 
-    // Non-blocking: schedules a capture on the background thread.
-    // Env: RCQ_OBS_CAP_MIN_MS (default 50) — min ms between captures; 0 = every call.
-    //      RCQ_VCAM_TEST_BARS=1 — test pattern, no window grab.
+    /// Preferred path: latest GPU frame from engine `frames_buffer` (same bus as Spout).
+    void pushFrameFromBus(IDataBus* bus);
+
+    /// Fallback: HWND / Qt grab (slow). Env RCQ_OBS_CAP_MIN_MS throttles this path.
     void pushFrameFromWidget(QWidget* viewport);
 
     bool isStreaming() const;
@@ -44,5 +46,6 @@ private:
     std::condition_variable m_captureCV;
     std::atomic<bool>       m_captureStop{false};
     std::atomic<bool>       m_capturePending{false};
+    std::atomic<void*>      m_pendingTexture{nullptr}; // ID3D11Texture2D*, latest-wins
     QWidget*                m_captureViewport{nullptr}; // written under m_captureMutex
 };
