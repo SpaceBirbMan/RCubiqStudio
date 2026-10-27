@@ -12,7 +12,7 @@
 #include <nlohmann/json.hpp>
 #include <deque>
 #include "abstractuinodes.h"
-#include <tuple>
+#include "ieventmanager.h"
 
 
 // Общая синхронизация для слотов шины, которые плагины меняют при работе/выгрузке,
@@ -23,6 +23,13 @@ inline std::mutex& streamBusMutex() {
     return m;
 }
 }
+
+// N-мерные объекты — src/rspace.h. Доска плоскостей и добавок на шине: scene_board, scene_board_mutex.
+class ITexture {
+protected:
+    std::string backend = "";
+    void* rawPointer = nullptr;
+};
 
 using path_string = std::string;
 
@@ -81,6 +88,58 @@ enum class PixelFormat : uint8_t {
     // ...
 };
 
+class HttpRequest {
+public:
+    std::string sender = "";
+    std::string url = "";
+    json object = json();
+    std::string reason = "";
+    /// Если не пусто, уходит как тело запроса вместо `object`.
+    std::string rawBody;
+    std::string contentType = "application/json";
+    std::unordered_map<std::string, std::string> headers;
+
+    HttpRequest(std::string s, std::string u, std::string r, json obj) : sender(s), url(u), reason(r), object(obj) {}
+    HttpRequest(std::string s, std::string u, std::string r) : sender(s), url(u), reason(r) {}
+};
+
+/// Хост открывает url в браузере и ловит redirect на 127.0.0.1:port.
+/// Ответ — HttpRespond на `{sender}_browser_auth_respond`: raw это fragment или query.
+struct BrowserAuth {
+    std::string sender;
+    std::string url;
+    std::string reason;
+    std::string state;
+    int port = 17563;
+    int timeoutSec = 180;
+};
+
+/// Хост держит сокет. Пустой url закрывает текущий.
+/// Кадры приходят как WebSocketFrame на `{sender}_websocket_frame`.
+struct WebSocketOpen {
+    std::string sender;
+    std::string url;
+    std::string reason;
+};
+
+struct WebSocketFrame {
+    std::string reason;
+    std::string text;
+    bool closed = false;
+};
+
+class HttpRespond {
+public:
+    std::string code = "0";
+    json object = json();
+    std::string reason = "";
+    std::string raw;
+
+    HttpRespond() = default;
+    HttpRespond(std::string c, std::string r, json o): code(c), object(o){}
+    HttpRespond(std::string c, std::string r) : code(c) {}
+};
+
 struct TextureDesc {
     uint16_t width;
     uint16_t height;
@@ -132,13 +191,13 @@ struct PluginDeviceDescriptor {
 };
 
 class Service {
-private:
-    std::string name = "unnamed";
+    private:
+        std::string name = "unnamed";
 
-public:
-    virtual ~Service() = default;
-    virtual std::string getName() const final { return name; }
-    virtual void setName(const std::string n) final { this->name = n; }
+    public:
+        virtual ~Service() = default;
+        virtual std::string getName() const final { return name; }
+        virtual void setName(const std::string n) final { this->name = n; }
 };
 
 /// Хост предоставляет поток захвата; плагин только читает моно F32 сэмплы (без SDL/miniaudio в DLL).
@@ -299,7 +358,7 @@ struct PluginUiTrackerTrees {
     std::shared_ptr<std::vector<RUI::UiPage>> pages;
 };
 
-#include "ieventmanager.h"
+
 class BusHandleBase;
 class IDataBus {
 public:
@@ -311,6 +370,9 @@ public:
     virtual void registerBusHandle(const std::string& key, std::unique_ptr<BusHandleBase> handle) = 0;
     virtual BusHandleBase* tryBusHandle(const std::string& key) noexcept = 0;
     virtual void clearBusHandleLive(const std::string& key) noexcept = 0;
+
+    /// Ключ чужой шины читается и пишется как свой. Тип значения остаётся в std::any, отдельный класс на каждый ключ не нужен.
+    virtual void follow(IDataBus* /*upstream*/, const std::string& /*key*/, bool /*asHandle*/) {}
 };
 
 class ITracker {
@@ -379,53 +441,94 @@ public:
     virtual std::string getName() = 0;
 };
 
-#ifdef BUILD_DLL
-#define DLL_EXPORT
+#if defined(_WIN32)
+#  if defined(BUILD_DLL)
+#    define DLL_EXPORT __declspec(dllexport)
+#  else
+#    define DLL_EXPORT __declspec(dllimport)
+#  endif
 #else
-#define DLL_EXPORT __declspec(dllimport)
+#  if defined(BUILD_DLL)
+#    define DLL_EXPORT __attribute__((visibility("default")))
+#  else
+#    define DLL_EXPORT
+#  endif
 #endif
 
-class Plugin {
+/// Плагин нового типа. События и данные приходят от менеджера плагинов, не от ядра.
+/// `send` / `subscribe` прячут AppMessage. Страницы UI — абстрактные узлы, хост только рисует их.
+class IPlugin {
 private:
     IEventManager* _em;
     IDataBus* _db;
+    std::string libraryPath_;
 protected:
     std::string name;
 
-    virtual void send(std::string &m, std::any d) final {
-        _em->sendMessage(AppMessage(name, m, std::move(d)));
+    void send(const std::string& message, std::any data) {
+        _em->sendMessage(AppMessage(name, message, std::move(data)));
     }
 
-    virtual void subscribe(std::string &m, std::function<void(const std::any&)> fn) final {
-        _em->subscribe(m, fn);
+    void subscribe(const std::string& message, std::function<void(const std::any&)> fn) {
+        _em->subscribe(name, message, std::move(fn));
     }
 
-    virtual std::any getVariable(std::string &n) final {
-        return _db->getData(n);
+    template <typename C>
+    void subscribe(const std::string& message, void (C::*method)(), C* instance) {
+        _em->subscribe(name, message, method, instance);
     }
 
-    virtual void registerVariable(const std::string &s, std::any* v) final {
-        _db->registerData(s, v);
+    template <typename T, typename C>
+    void subscribe(const std::string& message, void (C::*method)(T), C* instance) {
+        _em->subscribe(name, message, method, instance);
+    }
+
+    IDataBus* bus() const { return _db; }
+    IEventManager* events() const { return _em; }
+
+    std::any getVariable(const std::string& key) {
+        return _db->getData(key);
+    }
+
+    void registerVariable(const std::string& key, std::any value) {
+        _db->registerData(key, std::move(value));
+    }
+
+    /// Хост снимет страницы и повесит `onClick` на виджеты. Логика остаётся в плагине.
+    void publishPages(std::shared_ptr<std::vector<RUI::UiPage>> pages) {
+        PluginUiTrackerTrees submission;
+        submission.libraryPath = libraryPath_;
+        submission.pluginMessagingId = name;
+        submission.pages = std::move(pages);
+        send("plugin_ui_pages", std::move(submission));
     }
 
 public:
-    Plugin(IEventManager* em, IDataBus* db, const std::string& n = "unnamed") : name(n), _em(em), _db(db) {}
-    virtual ~Plugin() = default;
+    IPlugin(IEventManager* em, IDataBus* db, const std::string& n = "unnamed") : name(n), _em(em), _db(db) {}
+    virtual ~IPlugin() = default;
 
+    void setLibraryPath(const std::string& path) { libraryPath_ = path; }
+    const std::string& libraryPath() const { return libraryPath_; }
+
+    virtual void created() {}
+    virtual void inited() {}
     virtual void start() {}
-    virtual void update(float deltaTime) {}
+    virtual void update(float /*deltaTime*/) {}
+    virtual void stop() {}
+    virtual void cleared() {}
+    virtual void destroyed() {}
+
+    /// Часть интерфейса, не экспорт библиотеки. Выгрузка объекта в том модуле, где он создан.
+    virtual void release() { delete this; }
 
     const std::string& getName() const { return name; }
 };
 
 #define IMPLEMENT_PLUGIN(ClassName) \
 extern "C" { \
-    DLL_EXPORT Plugin* create(IEventManager* em, IDataBus* db) { \
+    DLL_EXPORT IPlugin* create(IEventManager* em, IDataBus* db) { \
         return new ClassName(em, db, #ClassName); \
-} \
-    DLL_EXPORT void destroy(Plugin* p) { \
-        delete p; \
-} \
+    } \
 }
 
 using CreateEngine = IModel* (*)(IEventManager*, IDataBus*);
@@ -435,8 +538,8 @@ using CreateTracker = ITracker* (*)(IEventManager*, IDataBus*);
 using DestroyTracker = void (*)(ITracker*);
 using CreatePlugin = IGenPlugin* (*)(IEventManager*, IDataBus*);
 using DestroyPlugin = void (*)(IGenPlugin*);
-using CreateNewPlugin = Plugin* (*)(IEventManager*, IDataBus*);
-using DestroyNewPlugin = void (*)(Plugin*);
+using CreateNewPlugin = IPlugin* (*)(IEventManager*, IDataBus*);
+using DestroyNewPlugin = void (*)(IPlugin*);
 
 struct LibMeta {
     std::string path;
@@ -446,6 +549,8 @@ struct LibMeta {
 struct Meta {
     std::string path;
     std::vector<std::string> func_names;
+    /// Пустой — резолвер отвечает в тему своего типа плагина.
+    std::string respond;
 };
 
 struct EngineFuncs {

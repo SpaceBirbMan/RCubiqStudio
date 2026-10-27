@@ -1,5 +1,7 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 4.0)
 
+set(VCPKG_TARGET_TRIPLET x64-mingw-dynamic CACHE STRING "")
+set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "") # требуется указать переменную среды
 project(Studio VERSION 0.1 LANGUAGES CXX)
 
 option(STUDIO_FORCE_ROOT_CACHE "Force portable cache/settings roots next to executable (Release-friendly)." ON)
@@ -17,8 +19,6 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(STUDIO_DEPLOY_RUNTIME_POSTBUILD OFF)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -27,6 +27,8 @@ set(QT_VERSION_MAJOR 6)
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2 Quick3D)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Quick QuickWidgets LinguistTools Gui QuickControls2 Quick3D)
 find_package(PkgConfig REQUIRED)
+
+
 
 set(STUDIO_TS_RU ${CMAKE_SOURCE_DIR}/i18n/Studio_ru_RU.ts)
 set(QT_CREATOR_SKIP_MAINTENANCE_TOOL_PROVIDER ON)
@@ -208,6 +210,8 @@ add_compile_definitions(BX_CONFIG_DEBUG=1)
 
 message(STATUS "OpenCV libs: ${OpenCV_LIBS}")
 
+find_package(httplib CONFIG REQUIRED)
+
 target_link_libraries(
     Studio PRIVATE
     cpptrace::cpptrace
@@ -223,6 +227,7 @@ target_link_libraries(
     PkgConfig::HIDAPI
     PkgConfig::LIBUSB
     ${OpenCV_LIBS}
+    httplib::httplib
 )
 
 if(WIN32)
@@ -245,6 +250,7 @@ if(WIN32)
         oleaut32
         uuid
         shell32
+        winhttp
         psapi
         dxgi
     )

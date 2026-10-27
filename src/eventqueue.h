@@ -3,6 +3,7 @@
 
 #include <queue> // мб стоит юзать журнал, аки в apache kafka
 #include <map>
+#include <mutex>
 #include <QString>
 #include "appmessage.h"
 #include <condition_variable>
@@ -17,6 +18,7 @@ public:
     EventQueue() = default;
 
     std::string logQueue() {
+        std::lock_guard<std::mutex> lock(mut);
         std::string str = "";
         for (AppMessage am : eventQueue) {
             str.append(am.toString()+'\n');
@@ -25,24 +27,25 @@ public:
     } // выводит всю очередь, полезно для определния, что там есть
 
     void sendMessage(const AppMessage message) {
-
-        eventQueue.push_back(message);
+        {
+            std::lock_guard<std::mutex> lock(mut);
+            eventQueue.push_back(message);
+        }
         mpPtr->notify();
-
     } // отправить сообщение в очередь
 
     AppMessage pollMessage(/*AppMessage message*/) {
+        std::lock_guard<std::mutex> lock(mut);
         if (!eventQueue.empty()) {
-
-        AppMessage res = eventQueue.front(); // зачем
-        eventQueue.pop_front();
-        return res;
-        } else {
-            return AppMessage();
+            AppMessage res = eventQueue.front();
+            eventQueue.pop_front();
+            return res;
         }
+        return AppMessage();
     } // достать сообщение из очереди
 
     void clearQueue() {
+        std::lock_guard<std::mutex> lock(mut);
         eventQueue.clear();
     }
 
@@ -51,6 +54,7 @@ public:
     }
 
     bool is_empty() {
+        std::lock_guard<std::mutex> lock(mut);
         return eventQueue.empty();
     }
 

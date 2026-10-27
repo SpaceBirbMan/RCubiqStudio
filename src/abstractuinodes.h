@@ -387,6 +387,12 @@ public:
     bool editable = false;
     std::function<void(const std::string&)> onTextEdited;
 
+private:
+    std::shared_ptr<std::mutex> textLock = std::make_shared<std::mutex>();
+    std::mutex& textMutex() const { return *textLock; }
+
+public:
+
     UiTitle(std::string text) {
         this->text = text;
     }
@@ -403,10 +409,12 @@ public:
     }
 
     void setText(std::string text) {
-        this->text = text;
+        std::lock_guard<std::mutex> lock(textMutex());
+        this->text = std::move(text);
     }
 
-    std::string getText() {
+    std::string getText() const {
+        std::lock_guard<std::mutex> lock(textMutex());
         return text;
     }
 
@@ -699,6 +707,17 @@ public:
     std::vector<std::string> items;
     int selectedIndex = -1;
     std::function<void(int)> onSelect;
+    std::shared_ptr<std::mutex> itemsLock = std::make_shared<std::mutex>();
+
+    void replaceItems(std::vector<std::string> next) {
+        std::lock_guard<std::mutex> lock(*itemsLock);
+        items = std::move(next);
+    }
+
+    std::vector<std::string> copyItems() const {
+        std::lock_guard<std::mutex> lock(*itemsLock);
+        return items;
+    }
 };
 
 struct GridItem {

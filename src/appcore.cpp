@@ -3,9 +3,24 @@
 #include "eventmanager.h"
 #include "bushandle.h"
 #include "rcqapi.h"
+#include "rspace.h"
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <string>
+
+namespace {
+RSpace::SceneBoard& sceneBoard()
+{
+    static RSpace::SceneBoard board;
+    return board;
+}
+std::mutex& sceneBoardMutex()
+{
+    static std::mutex mu;
+    return mu;
+}
+}
 
 /// Каналы «живые указатели от плагина / дефолт на шине» — создаются один раз при старте хоста.
 static void ensureEngineLivePublishChannels(IDataBus* bus)
@@ -37,7 +52,10 @@ AppCore::AppCore() : eventManager() {
     eventManager.subscribe(name, "module_initialized", &AppCore::addToInitReady, this);
 
     this->eventManager.getBusPtr()->registerData("render_pipeline", std::vector<function<void()>> {}); // а может быть такие зарезервированные штуки стоит в enum поместить?
+    this->eventManager.getBusPtr()->registerData("render_pipeline_mutex", &HostInterop::renderPipelineMutex());
     this->eventManager.getBusPtr()->registerData("control_table", std::unordered_map<std::string, std::shared_ptr<void>> {});
+    this->eventManager.getBusPtr()->registerData(RSpace::kSceneBoard, &sceneBoard());
+    this->eventManager.getBusPtr()->registerData(RSpace::kSceneBoardMutex, &sceneBoardMutex());
     this->eventManager.getBusPtr()->registerData("engines_gui_pages", std::unordered_map<std::string, RUI::UiPage> {});
     this->eventManager.getBusPtr()->registerData("trakers_gui_pages", std::unordered_map<std::string, RUI::UiPage> {});
 

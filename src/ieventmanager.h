@@ -4,6 +4,7 @@
 #include <string>
 #include <functional>
 #include <any>
+#include <iostream>
 #include <typeinfo>
 #include "appmessage.h"
 
@@ -49,12 +50,16 @@ public:
 
     template <typename T, typename C>
     void subscribe(const std::string& msg, void (C::*method)(T), C* instance) {
-        auto callback = [instance, method](const std::any& data) {
+        auto callback = [instance, method, msg](const std::any& data) {
             if (data.type() == typeid(T)) {
                 (instance->*method)(std::any_cast<T>(data));
+            } else {
+                std::cerr << "[Event] " << msg << " не совпал тип, пришло "
+                          << (data.has_value() ? data.type().name() : "пусто")
+                          << ", ждали " << typeid(T).name() << std::endl;
             }
         };
-        this->subscribe("N/A", msg, std::move(callback));
+        this->subscribe(msg, std::move(callback));
     }
 
     template <typename T, typename C>

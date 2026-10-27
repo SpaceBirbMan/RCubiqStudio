@@ -21,6 +21,8 @@
 
 #include <cstdio>
 
+//conan для зависимостей
+
 namespace {
 
 constexpr QLatin1String kQmBase(QLatin1String("Studio_"));

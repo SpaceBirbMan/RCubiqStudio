@@ -15,6 +15,23 @@
 #include "rcqapi.h"
 #include <unordered_map>
 
+
+class IResolver {};
+
+/*
+
+IResolver {
+
+- name
+
++ getName
++ resolve(std::string name) -> IPlugin
+
+}
+
+*/
+
+
 // TODO: Пора добавлять поддержку архивов. Плагин придётся усложнять, так как невозможно всё сразу в библиотеку запечатать
 class DataManager
 {
@@ -42,6 +59,8 @@ private:
 
     std::unordered_map<std::string, std::shared_ptr<DynamicLibrary>> libsPool {};
 
+    std::vector<IResolver> ResolverPool {};
+
     void tryToLoadCache();
 
     void loadModel(std::vector<std::string> exts);
@@ -50,8 +69,9 @@ private:
 
     void saveFiles(std::any data);
 
-    // Функции для разрешения адресов функций из dll у плагинов
-    // Подлежит пересмотру, возможно нужно слияние функций
+    // Один резолвер адресов: первая функция обязательна, остальные можно не экспортировать.
+    void resolveSymbols(const Meta& meta, const std::string& respondTopic);
+
     void resolveApi(LibMeta meta);
     void resolveTracker(Meta meta);
     void resolvePlugin(Meta meta);

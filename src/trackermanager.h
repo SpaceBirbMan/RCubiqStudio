@@ -42,6 +42,8 @@ private:
     void onStopTracker();
 
     std::unordered_map<std::string, std::string> trackerDisplayNames_;
+    /// Регистрации не-трекеров (zip-плагины). clearAll их стирает из таблицы, сборка возвращает.
+    std::unordered_map<std::string, std::unordered_map<std::string, std::shared_ptr<void>>> externalControls_;
     std::string trackerDisplayName(const std::string& path) const;
 
 public:

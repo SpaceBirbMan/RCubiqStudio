@@ -438,13 +438,9 @@ std::vector<CameraInfo> DeviceManager::enumerateCameras(int maxIndex)
     std::vector<CameraInfo> cameras;
 
 #ifdef _WIN32
-    // List DShow cameras *without* instantiating their filters.  That keeps
-    // AkVirtualCamera.dll (and any other virtual-camera provider) out of
-    // the host process — loading it here would create a second IpcBridge
-    // next to the one the capi owns, fight over the same SharedMemory
-    // service lock, and crash the app.  We iterate by DShow enumeration index:
-    // OpenCV's CAP_DSHOW backend uses the exact same index order as
-    // ICreateDevEnum, so we can hand the index straight to VideoCapture.
+    // Только имена из DirectShow, без VideoCapture. Открытие фильтра включает
+    // физическую камеру. Индекс совпадает с CAP_DSHOW, его забирает VideoDevice,
+    // когда камеру действительно открывают.
     const auto dshowDevices = listDShowVideoDevices();
     const int dshowCount = static_cast<int>(dshowDevices.size());
     const int limit = std::min(maxIndex, dshowCount);
@@ -459,27 +455,12 @@ std::vector<CameraInfo> DeviceManager::enumerateCameras(int maxIndex)
             continue;
         }
 
-        cv::VideoCapture cap(i, cv::CAP_DSHOW);
-        if (!cap.isOpened())
-            continue;
-
+        // Имя из реестра DirectShow. VideoCapture здесь не открываем: это включает
+        // физическую камеру, а виртуальному выводу окна это не нужно.
         CameraInfo info;
         info.index = i;
-        info.width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-        info.height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-        info.maxFps = cap.get(cv::CAP_PROP_FPS);
-
         const std::string friendly = wideToUtf8(dev.friendlyName.c_str());
-        if (!friendly.empty())
-            info.name = friendly;
-        else
-            info.name = "Camera #" + std::to_string(i);
-        info.name += " (" + std::to_string(info.width)
-                     + "x" + std::to_string(info.height) + ")";
-
-        std::cout << info.name << " " << info.maxFps << std::endl;
-
-        cap.release();
+        info.name = friendly.empty() ? ("Camera #" + std::to_string(i)) : friendly;
         cameras.push_back(info);
     }
 #else

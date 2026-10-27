@@ -26,10 +26,12 @@
 #include <QFrame>
 #include <QMenu>
 #include <QMenuBar>
+#include <functional>
 #include <string>
 
 #include "abstractuinodes.h"
 #include "uitabstyling.h"
+#include "guithread.h"
 
 using namespace RUI;
 

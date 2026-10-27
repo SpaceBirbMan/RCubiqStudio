@@ -115,6 +115,7 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
 {
     this->core = core;
     ui->setupUi(this);
+    installGuiDispatcher(this);
 
     for (int i = 0; i < ui->rightPanel->count(); ++i)
         setTabCategory(ui->rightPanel, i, UiTabCategory::App);
@@ -206,16 +207,19 @@ MainWindow::MainWindow(QWidget *parent, AppCore *core)
     //     m_rcqVirtualCam.reset();
     // }
 
-    // --- OBS Virtual Camera: viewport → shared memory for OBS Virtual Camera DirectShow filter. ---
-    m_obsVirtualCam = std::make_unique<ObsVirtualCamera>();
-    if (m_obsVirtualCam->startStream(640, 480, 30)) {
-        vw->setAfterFrameCallback([this, vw]() {
-            if (m_obsVirtualCam && m_obsVirtualCam->isStreaming()) {
-                m_obsVirtualCam->pushFrameFromWidget(vw);
-            }
-        });
-    } else {
-        m_obsVirtualCam.reset();
+    // Виртуальная камера снимает окно каждый кадр. По умолчанию выключена:
+    // галка «Start virtual camera output at startup».
+    if (AppSettings::startVirtualCameraBridgeAtStartup()) {
+        m_obsVirtualCam = std::make_unique<ObsVirtualCamera>();
+        if (m_obsVirtualCam->startStream(640, 480, 30)) {
+            vw->setAfterFrameCallback([this, vw]() {
+                if (m_obsVirtualCam && m_obsVirtualCam->isStreaming()) {
+                    m_obsVirtualCam->pushFrameFromWidget(vw);
+                }
+            });
+        } else {
+            m_obsVirtualCam.reset();
+        }
     }
 
     restorePersistedUiLayout();
@@ -447,6 +451,17 @@ MainWindow::findPluginPageEntryIt(const std::string& path)
     return pluginPageEntries.end();
 }
 
+void MainWindow::chooseModuleFiles(const QString& title, const QString& filter, const char* eventName)
+{
+    const QStringList fileNames = QFileDialog::getOpenFileNames(
+        ui->centralwidget, title, QDir::homePath(), filter);
+    std::vector<std::string> paths;
+    for (const QString& file : fileNames)
+        paths.emplace_back(file.toStdString());
+    if (!paths.empty())
+        core->getEventManager().sendMessage(AppMessage(name, eventName, paths));
+}
+
 void MainWindow::addPlugin() {
     QMenu menu(this);
     QAction* actEngine    = menu.addAction(tr("Add engine"));
@@ -461,45 +476,24 @@ void MainWindow::addPlugin() {
 }
 
 void MainWindow::addEnginePlugin() {
-    QStringList fileNames = QFileDialog::getOpenFileNames(
-        ui->centralwidget,
+    chooseModuleFiles(
         tr("Choose engine library"),
-        QDir::homePath(),
-        tr("Dynamic libraries (*.dll);;All files (*)")
-    );
-    std::vector<std::string> paths;
-    for (const QString& f : fileNames)
-        paths.emplace_back(f.toStdString());
-    if (!paths.empty())
-        core->getEventManager().sendMessage(AppMessage(name, "add_engines_names", paths));
+        tr("Dynamic libraries (*.dll);;All files (*)"),
+        "add_engines_names");
 }
 
 void MainWindow::addTrackerPlugin() {
-    QStringList fileNames = QFileDialog::getOpenFileNames(
-        ui->centralwidget,
+    chooseModuleFiles(
         tr("Choose tracker library"),
-        QDir::homePath(),
-        tr("Dynamic libraries (*.dll);;All files (*)")
-    );
-    std::vector<std::string> paths;
-    for (const QString& f : fileNames)
-        paths.emplace_back(f.toStdString());
-    if (!paths.empty())
-        core->getEventManager().sendMessage(AppMessage(name, "add_trackers_names", paths));
+        tr("Dynamic libraries (*.dll);;All files (*)"),
+        "add_trackers_names");
 }
 
 void MainWindow::addGenPlugin() {
-    QStringList fileNames = QFileDialog::getOpenFileNames(
-        ui->centralwidget,
+    chooseModuleFiles(
         tr("Choose plugin package"),
-        QDir::homePath(),
-        tr("Plugin packages (*.ofp);;All files (*)")
-    );
-    std::vector<std::string> paths;
-    for (const QString& f : fileNames)
-        paths.emplace_back(f.toStdString());
-    if (!paths.empty())
-        core->getEventManager().sendMessage(AppMessage(name, "add_plugins_to_registry", paths));
+        tr("Plugin packages (*.ofp *.zip);;All files (*)"),
+        "add_plugins_to_registry");
 }
 
 void MainWindow::removePlugin() {

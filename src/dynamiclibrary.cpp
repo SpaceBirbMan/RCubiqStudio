@@ -10,7 +10,9 @@
 
 DynamicLibrary::DynamicLibrary(const std::string& path) {
 #ifdef _WIN32
+    const UINT previousMode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
     handle_ = LoadLibraryA(path.c_str());
+    SetErrorMode(previousMode);
     if (!handle_) {
         throw std::runtime_error("Failed to load library: " + path);
     }

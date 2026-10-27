@@ -2,6 +2,7 @@
 #include "appcore.h"
 #include "consts.h"
 #include "logger.h"
+#include "pluginarchive.h"
 #include "pluginmeta.h"
 
 OtherPlugins::OtherPlugins(AppCore *appcore)
@@ -65,6 +66,8 @@ void OtherPlugins::postInitialize() {
 
 void OtherPlugins::addPaths(std::vector<std::string> paths) {
     for (const std::string& path : paths) {
+        if (isPluginArchive(path))
+            continue;
         // Always add to registry (idempotent)
         this->pluginsRegistry.emplace(path);
 
@@ -190,8 +193,9 @@ void OtherPlugins::registerPlugin(std::vector<void*> pointers) {
 }
 
 void OtherPlugins::deletePlugin(std::string path) {
-    if (path.empty()) {
-        std::cerr << "[OtherPlugins] deletePlugin called with empty path\n";
+    if (path.empty() || isPluginArchive(path)) {
+        if (path.empty())
+            std::cerr << "[OtherPlugins] deletePlugin called with empty path\n";
         return;
     }
 
@@ -221,8 +225,9 @@ void OtherPlugins::deletePlugin(std::string path) {
 }
 
 void OtherPlugins::disablePlugin(std::string path) {
-    if (path.empty()) {
-        std::cerr << "[OtherPlugins] disablePlugin called with empty path\n";
+    if (path.empty() || isPluginArchive(path)) {
+        if (path.empty())
+            std::cerr << "[OtherPlugins] disablePlugin called with empty path\n";
         return;
     }
     auto it = plugins.find(path);
@@ -252,8 +257,9 @@ void OtherPlugins::disablePlugin(std::string path) {
 }
 
 void OtherPlugins::enablePlugin(std::string path) {
-    if (path.empty()) {
-        std::cerr << "[OtherPlugins] enablePlugin called with empty path\n";
+    if (path.empty() || isPluginArchive(path)) {
+        if (path.empty())
+            std::cerr << "[OtherPlugins] enablePlugin called with empty path\n";
         return;
     }
     if (plugins.count(path)) {

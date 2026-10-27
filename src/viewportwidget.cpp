@@ -97,6 +97,7 @@ ViewportWidget::ViewportWidget(AppCore* core, QWidget* parent)
     core->getEventManager().getBusPtr()->registerData("viewport_size", &viewport_size);
     core->getEventManager().getBusPtr()->registerData("viewport_dpr", &viewport_dpr_);
     core->getEventManager().getBusPtr()->registerData("viewport_commands_deque", &commandQueue);
+    armPipelineTimer();
 }
 
 std::string ViewportWidget::mouseButtonName(Qt::MouseButton btn)
@@ -204,13 +205,8 @@ void ViewportWidget::initialize() {
     core->getEventManager().sendMessage(AppMessage(name, "send_win_id", canonical_win_id_));
 }
 
-void ViewportWidget::connectToTimer(std::function<void()> fn) {
-    std::cout << "[READY_T]" << std::endl;
-    if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, [this, fn]() { this->connectToTimer(fn); }, Qt::QueuedConnection);
-        return;
-    }
-
+void ViewportWidget::armPipelineTimer()
+{
     auto a_ren_pip = &core->getEventManager().getBusPtr()->getData("render_pipeline");
     try {
         this->ren_pip_ptr = std::any_cast<std::vector<std::function<void()>>>(a_ren_pip);
@@ -221,10 +217,21 @@ void ViewportWidget::connectToTimer(std::function<void()> fn) {
     m_tickCallback = [this]() {
         if (this->ren_pip_ptr) {
             std::lock_guard<std::mutex> pipLock{HostInterop::renderPipelineMutex()};
+            bool showed = false;
             for (auto& func : *this->ren_pip_ptr) {
-                if (func) {
-                    func();
+                if (!func)
+                    continue;
+                if (!showed && engine_surface_) {
+                    showed = true;
+                    if (!engine_surface_->isVisible()) {
+                        hidePlaceholder();
+                        engine_surface_->show();
+                        engine_surface_->raise();
+                        layoutEngineSurface();
+                    }
+                    canonical_win_id_ = static_cast<uintptr_t>(engine_surface_->winId());
                 }
+                func();
             }
         }
 
@@ -244,6 +251,16 @@ void ViewportWidget::connectToTimer(std::function<void()> fn) {
     if (!timer.isActive()) {
         timer.start(16);
     }
+}
+
+void ViewportWidget::connectToTimer(std::function<void()> fn) {
+    std::cout << "[READY_T]" << std::endl;
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, fn]() { this->connectToTimer(fn); }, Qt::QueuedConnection);
+        return;
+    }
+
+    armPipelineTimer();
     m_acceptViewportResize = true;
     QTimer::singleShot(0, this, [this]() {
         layoutEngineSurface();

@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <functional>
 #include <any>
-#include <chrono>
 #include <mutex>
 #include <algorithm>
 #include "ieventmanager.h"
@@ -27,8 +26,10 @@ class EventManager : public IEventManager // занимается рассылк
         // сюда же можно свалить задачу по загрузке данных в окна, программа запустилась - постепенно закидываются данные в окна
 {
 public:
-    EventManager()
-        : messages{}
+    explicit EventManager(std::string busName = "EventManager")
+        : busName_(std::move(busName))
+        , busLog_(&logger, busName_)
+        , messages{}
         , processor(messages, [this](const std::string& topic) {
               std::lock_guard<std::mutex> lock(subscribers_mutex_);
               const auto it = subscribers_by_message_.find(topic);
@@ -49,6 +50,8 @@ public:
     // void subscribe(const std::string& msg, std::function<void(const std::any&)> fn) {
     //     subscribers[msg] = std::move(fn);
     // }
+
+    // Надо сделать передачу вектора с объектами для подписки
 
     void subscribe(const std::string& msg, std::function<void(const std::any&)> fn) override {
         std::lock_guard<std::mutex> lock(subscribers_mutex_);
@@ -128,6 +131,8 @@ private:
     MessageProcessor processor;
     DirectSender directSender = DirectSender(); // TODO: Убрать
     Logger logger;
+    std::string busName_;
+    ModuleLogProvider busLog_;
     DataBus* bus = new DataBus();
 
     void notifyModules();

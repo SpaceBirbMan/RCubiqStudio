@@ -102,6 +102,7 @@ private:
     void uiSetPluginName(std::string path, std::string pluginName);
 
     // Adding dialogs helpers
+    void chooseModuleFiles(const QString& title, const QString& filter, const char* eventName);
     void addEnginePlugin();
     void addTrackerPlugin();
     void addGenPlugin();

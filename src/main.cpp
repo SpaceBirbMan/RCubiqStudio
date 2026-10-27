@@ -5,10 +5,10 @@
 #include "devicemanager.h"
 #include "trackermanager.h"
 #include "otherplugins.h"
+#include "pluginmanager.h"
+#include "networkmanager.h"
 
 #include "appsettings.h"
-#include "consts.h"
-#include "logger.h"
 #include "appshutdown.h"
 #include "devicehotplugnotifier.h"
 
@@ -18,6 +18,12 @@
 #include <QQmlEngine>
 #include <QQuickView>
 #endif
+
+class TempStartupObject {
+
+    // смысл в запуске основных систем и отображения окна
+
+};
 
 int main(int argc, char *argv[])
 {
@@ -41,6 +47,7 @@ int main(int argc, char *argv[])
     AppCore *core = new AppCore;
 
     DataManager *dtm = new DataManager(core);
+    new NetworkManager(core);
 
     EngineManager *egm = new EngineManager(core);  // нужно будет поправить порядок создания модулей
     MainWindow mainWindow(nullptr, core);
@@ -48,6 +55,7 @@ int main(int argc, char *argv[])
     RenderManager *renm = new RenderManager(core);
     DeviceManager *dvm = new DeviceManager(core);
     TrackerManager *tkm = new TrackerManager(core);
+    PluginManager *packages = new PluginManager(core);
     OtherPlugins *op = new OtherPlugins(core); // <-- должен создаваться последним
     DeviceHotplugNotifier hotplugNotifier(core, &a);
     hotplugNotifier.installOn(&a);
@@ -58,6 +66,7 @@ int main(int argc, char *argv[])
     core->registerModule(egm->name);
     //core->registerModule(renm->cacheKey());
     core->registerModule(tkm->cacheKey());
+    core->registerModule(packages->cacheKey());
     core->registerModule(op->cacheKey());
 
     core->getEventManager().sendMessage(AppMessage("main", "askToPreInit", 0)); // вместо нуля можно аргументы

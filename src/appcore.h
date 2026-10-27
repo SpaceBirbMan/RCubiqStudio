@@ -8,6 +8,14 @@
 #include <vector>
 #include "crashhandler.h"
 
+class Process { // нужен из-за кроссплатформенности
+
+};
+
+class ProcessManager {
+
+};
+
 class AppCore
 {
 public:
@@ -16,6 +24,8 @@ public:
     EventManager& getEventManager() {
         return eventManager;
     }
+
+
 
     CrashHandler& getCrashHandler() { return *crashHandler; }
 

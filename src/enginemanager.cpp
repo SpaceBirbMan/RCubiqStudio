@@ -178,7 +178,7 @@ void EngineManager::activateEngineByPath(std::string path) {
 void EngineManager::deactivateEngineByPath(std::string path) {
     deactivateEngineByPathImpl(std::move(path), true);
 }
-
+// Это ещё что?
 void EngineManager::deactivateEngineByPathImpl(std::string path, bool persistSession) {
     if (path.empty()) {
         log_.warn("deactivateEngineByPath called with empty path");

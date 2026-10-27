@@ -11,6 +11,7 @@
 #include "rcqapi.h"
 #include "appmessage.h"
 
+class CpuMeter;
 class EventQueue; // решение циклической зависимости
 
 class MessageProcessor
@@ -61,6 +62,7 @@ public:
     std::condition_variable& idleCv();
 
     void notifyIfIdle();
+    void setCpuMeter(CpuMeter* meter) { cpuMeter_ = meter; }
 
 private:
     void dispatchOne(const AppMessage& msg);
@@ -71,6 +73,7 @@ private:
     std::atomic<int> dispatchDepth{0};
     EventQueue& qPtr;
     std::function<std::vector<subStruct>(const std::string&)> getSubscribersSnapshot;
+    CpuMeter* cpuMeter_ = nullptr;
 
     std::mutex sync_mutex_;
     std::condition_variable sync_cv_;

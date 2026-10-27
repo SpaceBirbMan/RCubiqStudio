@@ -1,5 +1,7 @@
 #include "messageprocessor.h"
+#include "cpumeter.h"
 #include "eventqueue.h"
+#include <chrono>
 #include <iostream>
 
 std::mutex& MessageProcessor::idleMutex() { return sync_mutex_; }
@@ -23,7 +25,17 @@ void MessageProcessor::dispatchOne(const AppMessage& msg)
     const std::vector<subStruct> subs = getSubscribersSnapshot(msg.getMessage());
     for (const subStruct& sstr : subs) {
         try {
-            sstr.callback(msg.getData());
+            if (!cpuMeter_ || sstr.name == "log_write") {
+                sstr.callback(msg.getData());
+            } else {
+                const auto started = std::chrono::steady_clock::now();
+                sstr.callback(msg.getData());
+                const double ms = std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - started)
+                                      .count();
+                if (ms >= 0.4)
+                    cpuMeter_->add(sstr.receiver == "N/A" ? sstr.name : sstr.receiver, sstr.name, ms);
+            }
         } catch (const std::exception& e) {
             std::cerr << "Exception in callback '" << sstr.name << "' " << e.what() << std::endl;
         }

@@ -64,6 +64,7 @@ void TrackerManager::mergeTrackerControls(const std::string& path, ITracker* ins
 
 void TrackerManager::removeTrackerControls(const std::string& path)
 {
+    externalControls_.erase(path);
     std::vector<std::string> removed;
     controlTableHost_.removeTracker(path, removed);
     if (!removed.empty())
@@ -80,6 +81,8 @@ void TrackerManager::rebuildControlTableFromAllTrackers()
         if (data.instance)
             controlTableHost_.mergeTracker(path, trackerDisplayName(path), data.instance, added);
     }
+    for (const auto& [path, entries] : externalControls_)
+        controlTableHost_.merge(path, trackerDisplayName(path), entries, added);
     publishControlTable("", std::move(added), std::move(removed));
 }
 

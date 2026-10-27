@@ -4,9 +4,11 @@
 #include <any>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include "rcqapi.h"
 #include "bushandle.h"
 
@@ -15,16 +17,49 @@ class DataBus : public IDataBus {
 private:
     std::unordered_map<std::string, std::any> storage_;
     std::unordered_map<std::string, std::unique_ptr<BusHandleBase>> bus_handles_;
+    IDataBus* upstream_ = nullptr;
+    std::unordered_set<std::string> followData_;
+    std::unordered_set<std::string> followHandles_;
+    std::mutex followMu_;
 
 public:
     DataBus();
 
+    void follow(IDataBus* upstream, const std::string& key, bool asHandle) override {
+        if (!upstream || upstream == this)
+            return;
+        std::lock_guard<std::mutex> lock(followMu_);
+        upstream_ = upstream;
+        if (asHandle)
+            followHandles_.insert(key);
+        else
+            followData_.insert(key);
+    }
+
     void registerData(const std::string& key, std::any data) override {
+        IDataBus* upstream = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(followMu_);
+            if (upstream_ && followData_.count(key))
+                upstream = upstream_;
+        }
+        if (upstream) {
+            upstream->registerData(key, std::move(data));
+            return;
+        }
         std::cout << "ADDED " << key << std::endl;
         storage_[key] = std::move(data);
     }
 
     std::any& getData(const std::string& key) override {
+        IDataBus* upstream = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(followMu_);
+            if (upstream_ && followData_.count(key))
+                upstream = upstream_;
+        }
+        if (upstream)
+            return upstream->getData(key);
         auto it = storage_.find(key);
         if (it == storage_.end()) {
             throw std::out_of_range("Key not found: " + key);
@@ -41,6 +76,14 @@ public:
     }
 
     BusHandleBase* tryBusHandle(const std::string& key) noexcept override {
+        IDataBus* upstream = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(followMu_);
+            if (upstream_ && followHandles_.count(key))
+                upstream = upstream_;
+        }
+        if (upstream)
+            return upstream->tryBusHandle(key);
         auto it = bus_handles_.find(key);
         return it != bus_handles_.end() ? it->second.get() : nullptr;
     }

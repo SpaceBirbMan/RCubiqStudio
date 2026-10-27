@@ -3,7 +3,12 @@
 #include <stb/stb_image.h>
 #include <iostream>
 #include <QPointer>
+#include <QMetaObject>
+#include <QThread>
+#include <QCoreApplication>
 #include <QListWidget>
+#include <QCheckBox>
+#include <QIcon>
 #include <QDialog>
 #include <QStringListModel>
 #include <QCompleter>
@@ -15,8 +20,90 @@
 #include <QToolBox>
 #include <QEvent>
 #include <algorithm>
+#include <atomic>
+#include <condition_variable>
+#include <functional>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <vector>
+
+namespace {
+
+std::mutex guiMu;
+std::vector<std::function<void()>> guiQueue;
+std::atomic<std::thread::id> guiThreadId{};
+QObject* guiOwner = nullptr;
+
+void drainGuiQueue()
+{
+    std::vector<std::function<void()>> batch;
+    {
+        std::lock_guard<std::mutex> lock(guiMu);
+        batch.swap(guiQueue);
+    }
+    for (auto& fn : batch) {
+        if (fn)
+            fn();
+    }
+}
+
+class GuiCall final : public QObject {
+public:
+    explicit GuiCall(QObject* owner) : QObject(owner)
+    {
+        pump_.setInterval(30);
+        pump_.setTimerType(Qt::CoarseTimer);
+        connect(&pump_, &QTimer::timeout, this, [] { drainGuiQueue(); });
+        pump_.start();
+    }
+
+private:
+    QTimer pump_;
+};
+
+void postToGui(std::function<void()> fn)
+{
+    if (!fn)
+        return;
+    if (guiThreadId.load() == std::this_thread::get_id()) {
+        fn();
+        return;
+    }
+    std::lock_guard<std::mutex> lock(guiMu);
+    guiQueue.push_back(std::move(fn));
+}
+
+} // namespace
+
+void installGuiDispatcher(QObject* owner)
+{
+    if (guiOwner || !owner)
+        return;
+    guiThreadId.store(std::this_thread::get_id());
+    guiOwner = new GuiCall(owner);
+}
+
+void invokeOnGui(std::function<void()> fn)
+{
+    if (!fn)
+        return;
+    if (guiThreadId.load() == std::thread::id{} || guiThreadId.load() == std::this_thread::get_id()) {
+        fn();
+        return;
+    }
+    std::mutex waitMu;
+    std::condition_variable waitCv;
+    bool done = false;
+    postToGui([&] {
+        fn();
+        std::lock_guard<std::mutex> lock(waitMu);
+        done = true;
+        waitCv.notify_one();
+    });
+    std::unique_lock<std::mutex> lock(waitMu);
+    waitCv.wait(lock, [&] { return done; });
+}
 
 namespace {
 
@@ -29,10 +116,11 @@ static void configureQtToolBoxPageScrollAreas(QToolBox* tb) {
         tb->findChildren<QScrollArea*>(QString(), Qt::FindDirectChildrenOnly);
     for (QScrollArea* sa : areas) {
         sa->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        sa->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        sa->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         sa->setWidgetResizable(true);
         QWidget* w = sa->widget();
         if (!w) continue;
+        w->setMinimumWidth(0);
         if (QLayout* lay = w->layout())
             lay->activate();
         w->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -116,6 +204,7 @@ private:
     void rebuildPages() {
         if (!m_tb || !m_rui)
             return;
+        const int current = m_tb->currentIndex();
         while (m_tb->count() > 0) {
             QWidget* w = m_tb->widget(0);
             m_tb->removeItem(0);
@@ -125,11 +214,14 @@ private:
         for (const auto& page : m_rui->pages) {
             QWidget* content = UiRenderer::renderContainer(page.content.get());
             if (content) {
+                content->setMinimumWidth(0);
                 content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
                 m_tb->addItem(content, QString::fromStdString(page.title));
             }
         }
         configureQtToolBoxPageScrollAreas(m_tb);
+        if (current >= 0 && current < m_tb->count())
+            m_tb->setCurrentIndex(current);
         m_tb->updateGeometry();
     }
 
@@ -255,34 +347,50 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
             lbl->installEventFilter(new TitleEditFilter(lbl, hlay, t, lbl));
 
             QPointer<QLabel> lPtr = lbl;
-            t->onChange = [lPtr, t, applyFont]() {
-                if (lPtr) {
-                    lPtr->setText(QString::fromStdString(t->getText()));
-                    applyFont(lPtr, t->getFormat());
-                }
+            t->onChange = [lPtr, t]() {
+                const std::string text = t->getText();
+                postToGui([lPtr, text]() {
+                    if (lPtr)
+                        lPtr->setText(QString::fromStdString(text));
+                });
             };
             result = container;
         } else {
             auto* l = new QLabel(QString::fromStdString(t->getText()));
             applyFont(l, t->getFormat());
+            l->setWordWrap(true);
+            l->setMinimumWidth(0);
+            l->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
             QPointer<QLabel> lPtr = l;
-            t->onChange = [lPtr, t, applyFont]() {
-                if (lPtr) {
-                    lPtr->setText(QString::fromStdString(t->getText()));
-                    applyFont(lPtr, t->getFormat());
-                }
+            t->onChange = [lPtr, t]() {
+                const std::string text = t->getText();
+                postToGui([lPtr, text]() {
+                    if (lPtr)
+                        lPtr->setText(QString::fromStdString(text));
+                });
             };
             result = l;
         }
     }
-    // UiCheckBox before UiButton / UiToggleableButton (inheritance)
     else if (auto* cb = dynamic_cast<UiCheckBox*>(elem)) {
         auto* ch = new QCheckBox(QString::fromStdString(cb->text));
         ch->setChecked(cb->active);
-        if (cb->onToggle)
-            QObject::connect(ch, &QCheckBox::toggled, [cbfn = cb->onToggle](bool v){ cbfn(v); });
+        if (cb->onToggle) {
+            QObject::connect(ch, &QCheckBox::toggled, [cbfn = cb->onToggle](bool v) { cbfn(v); });
+        }
         QPointer<QCheckBox> cPtr = ch;
-        cb->onChange = [cPtr, cb]() { if(cPtr) { cPtr->setText(QString::fromStdString(cb->text)); cPtr->setChecked(cb->active); } };
+        cb->onChange = [cPtr, cb]() {
+            if (!cPtr)
+                return;
+            const std::string text = cb->text;
+            const bool active = cb->active;
+            postToGui([cPtr, text, active]() {
+                if (!cPtr)
+                    return;
+                cPtr->setText(QString::fromStdString(text));
+                cPtr->setChecked(active);
+            });
+        };
         result = ch;
     }
     else if (auto* tb = dynamic_cast<UiToggleableButton*>(elem)) {
@@ -290,10 +398,21 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
         btn->setCheckable(true);
         btn->setChecked(tb->active);
         if (tb->onToggle) {
-            QObject::connect(btn, &QPushButton::toggled, [cb = tb->onToggle](bool v) { cb(v); });
+            QObject::connect(btn, &QPushButton::toggled, [cbfn = tb->onToggle](bool v) { cbfn(v); });
         }
         QPointer<QPushButton> bPtr = btn;
-        tb->onChange = [bPtr, tb]() { if(bPtr) { bPtr->setText(QString::fromStdString(tb->text)); bPtr->setChecked(tb->active); } };
+        tb->onChange = [bPtr, tb]() {
+            if (!bPtr)
+                return;
+            const std::string text = tb->text;
+            const bool active = tb->active;
+            postToGui([bPtr, text, active]() {
+                if (!bPtr)
+                    return;
+                bPtr->setText(QString::fromStdString(text));
+                bPtr->setChecked(active);
+            });
+        };
         result = btn;
     }
     else if (auto* b = dynamic_cast<UiButton*>(elem)) {
@@ -307,6 +426,8 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
     }
     else if (auto* in = dynamic_cast<UiInputField*>(elem)) {
         auto* le = new QLineEdit;
+        le->setMinimumWidth(0);
+        le->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         le->setPlaceholderText(QString::fromStdString(in->hint));
         le->setText(QString::fromStdString(in->value));
         if (in->inputType == HIDDENTEXT) le->setEchoMode(QLineEdit::Password);
@@ -380,6 +501,10 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
     }
     else if (auto* scb = dynamic_cast<UiSearchableComboBox*>(elem)) {
         auto* box = new QComboBox;
+        box->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        box->setMinimumContentsLength(10);
+        box->setMinimumWidth(0);
+        box->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         box->setEditable(true);
         box->setInsertPolicy(QComboBox::NoInsert);
         box->lineEdit()->setPlaceholderText(QString::fromStdString(scb->filterHint));
@@ -413,6 +538,10 @@ QWidget* UiRenderer::renderElement(UiElement* elem) {
     }
     else if (auto* cbx = dynamic_cast<UiComboBox*>(elem)) {
         auto* box = new QComboBox;
+        box->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        box->setMinimumContentsLength(10);
+        box->setMinimumWidth(0);
+        box->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         for (const auto& it : cbx->items)
             box->addItem(QString::fromStdString(it));
         box->setCurrentIndex(cbx->currentIndex);
@@ -644,6 +773,7 @@ QWidget* UiRenderer::renderScrollBox(UiScrollBox* scroll) {
 
     auto* content = new QWidget;
     // Height from children so the outer QScrollArea scrolls the whole block (e.g. toolbox).
+    content->setMinimumWidth(0);
     content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto* lay = makeLayout(scroll->getComposition());
     content->setLayout(lay);
@@ -803,12 +933,15 @@ QWidget* UiRenderer::renderListView(UiListView* list) {
     
     QPointer<QListView> lvPtr = lv;
     list->onChange = [lvPtr, list]() {
-        if(lvPtr && lvPtr->model()) {
-            auto m = static_cast<QStringListModel*>(lvPtr->model());
+        std::vector<std::string> items = list->items;
+        postToGui([lvPtr, items = std::move(items)]() {
+            if (!lvPtr || !lvPtr->model())
+                return;
             QStringList strings;
-            for(const auto& str : list->items) strings << QString::fromStdString(str);
-            m->setStringList(strings);
-        }
+            for (const auto& str : items)
+                strings << QString::fromStdString(str);
+            static_cast<QStringListModel*>(lvPtr->model())->setStringList(strings);
+        });
     };
     return lv;
 }
@@ -818,14 +951,17 @@ QWidget* UiRenderer::renderGridView(UiGridView* grid) {
     lw->setViewMode(QListView::IconMode);
     lw->setResizeMode(QListView::Adjust);
     lw->setSpacing(5);
-    
-    auto fill = [lw, grid]() {
-        lw->clear();
+
+    QPointer<QListWidget> lwPtr = lw;
+    auto fill = [lwPtr, grid]() {
+        if (!lwPtr)
+            return;
+        lwPtr->clear();
         for (const auto& item : grid->items) {
-            auto li = new QListWidgetItem(QString::fromStdString(item.text), lw);
-            if (!item.imagePath.empty()) {
-                li->setIcon(QIcon(QString::fromStdString(item.imagePath)));
-            }
+            auto* row = new QListWidgetItem(QString::fromStdString(item.text));
+            if (!item.imagePath.empty())
+                row->setIcon(QIcon(QString::fromStdString(item.imagePath)));
+            lwPtr->addItem(row);
         }
     };
     fill();
@@ -833,8 +969,7 @@ QWidget* UiRenderer::renderGridView(UiGridView* grid) {
     QObject::connect(lw, &QListWidget::itemClicked, [lw, grid](QListWidgetItem* item) {
         if(grid->onSelect) grid->onSelect(lw->row(item));
     });
-    
-    QPointer<QListWidget> lwPtr = lw;
+
     grid->onChange = [lwPtr, fill]() {
         if(lwPtr) fill();
     };
@@ -1097,10 +1232,12 @@ QWidget* UiRenderer::renderToolBox(UiToolBox* toolbox) {
     if (!toolbox) return nullptr;
 
     auto* tb = new QToolBox;
+    tb->setMinimumWidth(0);
     tb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     for (const auto& page : toolbox->pages) {
         QWidget* content = UiRenderer::renderContainer(page.content.get());
         if (content) {
+            content->setMinimumWidth(0);
             content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
             tb->addItem(content, QString::fromStdString(page.title));
         }

@@ -1,7 +1,5 @@
 #include "datamanager.h"
 #include "appsettings.h"
-#include "filetypes.h"
-#include "shorts.h"
 #include "rcqapi.h"
 #include "consts.h"
 #include "logger.h"
@@ -12,12 +10,13 @@ DataManager::DataManager(AppCore* acptr) {
     this->appCorePtr = acptr;
 
     pluginFileBroker_ = std::make_unique<PluginFileBrokerImpl>();
+    QString pluginsCacheDir;
     {
-        const QString dir = AppSettings::writablePluginsCacheDirectory();
+        pluginsCacheDir = AppSettings::writablePluginsCacheDirectory();
 #ifdef _WIN32
-        const std::filesystem::path root(reinterpret_cast<const wchar_t*>(dir.utf16()));
+        const std::filesystem::path root(reinterpret_cast<const wchar_t*>(pluginsCacheDir.utf16()));
 #else
-        const std::filesystem::path root(dir.toUtf8().constData());
+        const std::filesystem::path root(pluginsCacheDir.toUtf8().constData());
 #endif
         pluginFileBroker_->setPluginsCacheRoot(root);
     }
@@ -26,6 +25,7 @@ DataManager::DataManager(AppCore* acptr) {
     bus->registerData("plugin_file_broker", static_cast<IPluginFileBroker*>(pluginFileBroker_.get()));
     bus->registerData("plugin_device_broker", static_cast<IPluginDeviceBroker*>(pluginDeviceBroker_.get()));
     bus->registerData("app_logger", static_cast<IAppLogger*>(&acptr->getEventManager().getLogger()));
+    bus->registerData("plugins_cache_root", pluginsCacheDir.toStdString());
 
     acptr->setPersistCallbacks(
         [this](const std::string& dllPathHint) {
@@ -76,9 +76,9 @@ void DataManager::tryToLoadCache() {
     }
 }
 
-void DataManager::resolveTracker(Meta meta) {
-    std::cout << "Started resolving" << std::endl;
-    // TODO: а если два движка откроется?
+void DataManager::resolveSymbols(const Meta& meta, const std::string& respondTopic)
+{
+    const std::string topic = meta.respond.empty() ? respondTopic : meta.respond;
     auto it = libsPool.find(meta.path);
     if (it == libsPool.end()) {
         try {
@@ -86,11 +86,10 @@ void DataManager::resolveTracker(Meta meta) {
             auto result = libsPool.emplace(meta.path, lib);
             it = result.first;
         } catch (const std::exception& e) {
-            std::cerr << "[DataManager] resolveTracker: failed to load library '"
+            std::cerr << "[DataManager] resolveSymbols: failed to load library '"
                       << meta.path << "': " << e.what() << std::endl;
             appCorePtr->getEventManager().sendMessage(
-                AppMessage(name, "tracker_resolving_respond", std::vector<void*>{})
-            );
+                AppMessage(name, topic, std::vector<void*>{}));
             return;
         }
     }
@@ -101,94 +100,41 @@ void DataManager::resolveTracker(Meta meta) {
             ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
         } catch (const std::exception& e) {
             if (i == 0) {
-                // 'create' is mandatory — abort
-                std::cerr << "[DataManager] resolveTracker: mandatory symbol '"
+                std::cerr << "[DataManager] resolveSymbols: mandatory symbol '"
                           << meta.func_names[i] << "' not found: " << e.what() << std::endl;
                 appCorePtr->getEventManager().sendMessage(
-                    AppMessage(name, "tracker_resolving_respond", std::vector<void*>{})
-                );
+                    AppMessage(name, topic, std::vector<void*>{}));
                 return;
             }
-            // Optional symbols (e.g. 'destroy') — use nullptr, TrackerManager handles it
-            std::cerr << "[DataManager] resolveTracker: optional symbol '"
+            std::cerr << "[DataManager] resolveSymbols: optional symbol '"
                       << meta.func_names[i] << "' not found, using nullptr\n";
             ptrs.emplace_back(nullptr);
         }
     }
 
-    appCorePtr->getEventManager().sendMessage(
-        AppMessage(name, "tracker_resolving_respond", ptrs)
-    );
+    appCorePtr->getEventManager().sendMessage(AppMessage(name, topic, ptrs));
+}
+
+void DataManager::resolveTracker(Meta meta) {
+    resolveSymbols(meta, "tracker_resolving_respond");
 }
 
 void DataManager::resolveFuncTable(LibMeta meta) {
-
     auto log = appCorePtr->getEventManager().getLogger().module(name);
     log.info("resolveFuncTable: begin " + meta.path);
     appCorePtr->getEventManager().sendMessage(
         AppMessage("Core", AppUiEvents::kStatusMessage, "Loading DLL: " + meta.path));
-    // TODO: а если два движка откроется?
-    auto it = libsPool.find(meta.path);
-    if (it == libsPool.end()) {
-        try {
-            log.info("resolveFuncTable: loading library from disk");
-            auto lib = std::make_shared<DynamicLibrary>(meta.path);
-            auto result = libsPool.emplace(meta.path, lib);
-            it = result.first;
-            log.info("resolveFuncTable: library loaded");
-        } catch (const std::exception& e) {
-            std::cerr << "[DataManager] resolveFuncTable: failed to load library '"
-                      << meta.path << "': " << e.what() << std::endl;
-            log.error(std::string("resolveFuncTable: load failed: ") + e.what());
-            appCorePtr->getEventManager().sendMessage(
-                AppMessage(name, "engine_resolving_respond", std::vector<void*>{})
-            );
-            return;
-        }
-    }
-
-    std::vector<void*> ptrs;
-    for (int i = 0; i < (int)meta.func_names.size(); i++) {
-        try {
-            ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
-        } catch (const std::exception& e) {
-            if (i == 0) {
-                std::cerr << "[DataManager] resolveFuncTable: mandatory symbol '"
-                          << meta.func_names[i] << "' not found: " << e.what() << std::endl;
-                appCorePtr->getEventManager().sendMessage(
-                    AppMessage(name, "engine_resolving_respond", std::vector<void*>{})
-                );
-                return;
-            }
-            std::cerr << "[DataManager] resolveFuncTable: optional symbol '"
-                      << meta.func_names[i] << "' not found, using nullptr\n";
-            ptrs.emplace_back(nullptr);
-        }
-    }
-
-    log.info("resolveFuncTable: symbols resolved, responding");
-    appCorePtr->getEventManager().sendMessage(
-        AppMessage(name, "engine_resolving_respond", ptrs)
-    );
+    Meta request;
+    request.path = meta.path;
+    request.func_names = meta.func_names;
+    resolveSymbols(request, "engine_resolving_respond");
 }
 
-// TODO: Функции друг на друга слишком похожи, имеет смысл унифицировать для отправки в этот менеджер, а ответное сообщение помещать в LibMeta
-
 void DataManager::resolveApi(LibMeta meta) {
-
-    auto it = libsPool.find(meta.path);
-    if (it == libsPool.end()) {
-        auto lib = std::make_shared<DynamicLibrary>(meta.path);
-        auto result = libsPool.emplace(meta.path, lib);
-        it = result.first;
-    }
-
-    std::vector<void*> ptrs;
-    for (int i = 0; i < meta.func_names.size(); i++) {
-        ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
-    }
-
-    this->appCorePtr->getEventManager().sendMessage(AppMessage(name,"resolve_render_api_respond", ptrs));
+    Meta request;
+    request.path = meta.path;
+    request.func_names = meta.func_names;
+    resolveSymbols(request, "resolve_render_api_respond");
 }
 
 void DataManager::loadModel(std::vector<std::string> exts) {
@@ -208,46 +154,7 @@ void DataManager::saveFiles(std::any data) {
 }
 
 void DataManager::resolvePlugin(Meta meta) {
-    std::cout << "Started plugin resolving" << std::endl;
-    // TODO: а если два движка откроется?
-    auto it = libsPool.find(meta.path);
-    if (it == libsPool.end()) {
-        try {
-            auto lib = std::make_shared<DynamicLibrary>(meta.path);
-            auto result = libsPool.emplace(meta.path, lib);
-            it = result.first;
-        } catch (const std::exception& e) {
-            std::cerr << "[DataManager] resolvePlugin: failed to load library '"
-                      << meta.path << "': " << e.what() << std::endl;
-            appCorePtr->getEventManager().sendMessage(
-                AppMessage(name, "plugin_resolving_respond", std::vector<void*>{})
-            );
-            return;
-        }
-    }
-
-    std::vector<void*> ptrs;
-    for (int i = 0; i < (int)meta.func_names.size(); i++) {
-        try {
-            ptrs.emplace_back(it->second->getSymbol(meta.func_names[i]));
-        } catch (const std::exception& e) {
-            if (i == 0) {
-                std::cerr << "[DataManager] resolvePlugin: mandatory symbol '"
-                          << meta.func_names[i] << "' not found: " << e.what() << std::endl;
-                appCorePtr->getEventManager().sendMessage(
-                    AppMessage(name, "plugin_resolving_respond", std::vector<void*>{})
-                );
-                return;
-            }
-            std::cerr << "[DataManager] resolvePlugin: optional symbol '"
-                      << meta.func_names[i] << "' not found, using nullptr\n";
-            ptrs.emplace_back(nullptr);
-        }
-    }
-
-    appCorePtr->getEventManager().sendMessage(
-        AppMessage(name, "plugin_resolving_respond", ptrs)
-    );
+    resolveSymbols(meta, "plugin_resolving_respond");
 }
 
 void DataManager::unloadLibrary(std::string path) {

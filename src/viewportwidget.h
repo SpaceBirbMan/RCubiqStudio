@@ -56,6 +56,7 @@ protected:
 private slots:
     void paintFrame();
     void connectToTimer(std::function<void()> fn);
+    void armPipelineTimer();
 
 private:
 
